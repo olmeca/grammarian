@@ -1,0 +1,234 @@
+## Grammarian extends the utility of Nim's PEG library when handling complex text structures
+## like e.g. the structure of a programming language, aimed at the use case where the
+## text involved is created by hand. Human errors need to be handled in a user friendly way
+## by providing more detailed feedback than 'The text does not match the pattern'. This requires
+## breaking down the parsing process into smaller parts. When the parse of a part of the text
+## fails the offending part can be pointed to. This means the user can look at a smaller
+## haystack to find the offending needle. Though it is possible to divide the parsing process
+## into small pieces using only the PEG library, I have found it challenging when dealing with
+## recursive structures, like nested expressions (e.g. SQL query with subqueries). A recursive
+## structure can be easily described in one PEG spec., that is not the problem addressed here.
+## If a large handwritten text (with recursive structures) has an error somewhere it is desirable
+## to be able to point the user to a small part of the text where it doesn't match the structure
+## specification. Therefore it is desirable to break the matching of the whole text into smaller
+## matches carried out on subparts. In general this can also be easily done with the PEG library,
+## except when there is recursion involved. When you try to break down the PEG description of a
+## recursive structure into smaller PEG specs. you will find yourself repeating the same PEG
+## lines in multiple specs. This is a consequence of the recursive nature of the structure.
+## Repeating yourself means redundancy and maintenance overhead. When you discover you need to
+## improve a PEG line you will have to walk through all the separate PEG specs you used it in.
+## Grammarian aims at minimizing or even eliminating such duplication. It does this by allowing
+## you to describe your recursive structure in one meta-PEG specification, which I call a Grammar,
+## and from there retrieve specific PEG matchers when needed. It also allows you to postpone marking
+## the subpatterns of interest for extraction until the moment you retrieve a PEG
+
+import pegs, tables, strutils, sequtils, streams, sets
+
+type
+  PegPredicate* = tuple
+    name: string
+    pattern: string
+
+  Grammar* = ref object of RootObj
+    ## This is the object that stores all the PEG lines
+    ## as 'grammer rules'.
+    rules: OrderedTableRef[string, string]
+
+  PatternExtractor* = ref object of RootObj
+    ## This object wraps a Peg that can be used to
+    ## extract parts of a matched text. It also knows
+    ## the names of the marked subpatterns in the Peg.
+    ## This is used when matching en extracting parts:
+    ## the matches are returned as a table using these
+    ## names as keys to the matched values.
+    extractorPattern: Peg
+    mainPatternName: string
+    subPatternNames: seq[string]
+
+  PegPredicatePatternError* = object of ValueError
+    ## This error is raised when a Grammar object attempts
+    ## to read a PEG string that does not conform to the
+    ## syntax of a PEG expression.
+  NoSuchPredicateError* = object of ValueError
+    ## This error may be raised when the Grammar object
+    ## processes a request for a grammar rule (PEG line)
+    ## with an unrecognized name.
+  NoMatchError* = object of ValueError
+
+
+let peg_predicate_peg = peg"""
+Pattern <- ('^' ' '+)? Alternative ('/' Sp  Alternative)*
+Alternative <- SequenceItem+
+SequenceItem <- SuccessorPrefix? Sp Suffix
+SuccessorPrefix <- [!&]
+Suffix <- Primary CardinalityIndicator? Sp
+CardinalityIndicator <- [*+?]
+Primary <- '(' Sp Pattern ')' Sp / '.' Sp / Literal / Charclass / Nonterminal !'<-'
+Literal <- ['] (!['] .)* ['] Sp
+Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
+Nonterminal <- {Word} Sp
+Word <- [a-zA-Z]+
+Sp <- ' '*
+"""
+
+let peg_line_peg = peg"""
+PegLine <- Sp Name '<-' Sp Pattern !.
+Name <- {Word (':' Word)?} Sp
+Pattern <- {.+}
+Word <- [a-zA-Z]+
+Sp <- ' '*
+"""
+
+let whitespace_peg = peg"""
+Pattern <- ^ \s* !.
+"""
+
+proc isEmpty*(value: string): bool =
+    value == ""
+
+
+proc notEmpty*(value: string): bool =
+    not value.isEmpty
+
+
+proc foldMatches*(source: array[0..19, string]): string =
+    source.foldl(a & "|" & b)
+
+
+proc `$`(pred: PegPredicate): string =
+  "$# <- $#" % [pred.name, pred.pattern]
+
+
+proc read_peg_line*(line: string): PegPredicate =
+  if line =~ peg_line_peg:
+    result = (name: matches[0], pattern: matches[1])
+  else:
+    raise newException(PegPredicatePatternError, "Invalid PEG line: '$#'" % line);
+
+
+proc is_not_space_only(line: string): bool =
+  result = not (line =~ whitespace_peg)
+
+
+proc subpatterns*(pattern: string): seq[string] =
+  if pattern =~ peg_predicate_peg:
+    result = matches.filter(notEmpty)
+    # echo foldMatches(matches)
+  else:
+    raise newException(PegPredicatePatternError, pattern)
+
+
+proc subpatterns*(pred: PegPredicate): seq[string] =
+  subpatterns(pred.pattern)
+
+
+proc newGrammar*(): Grammar =
+  Grammar(rules: newOrderedTable[string, string]())
+
+
+proc get*(grammar: Grammar, key: string): PegPredicate =
+  result = (name: key, pattern: grammar.rules[key])
+
+
+proc add*(grammar: Grammar, pred: PegPredicate) =
+  # result = not base.rules.hasKey(predicate.name)
+  grammar.rules[pred.name] = pred.pattern
+
+
+proc boolStr(value: bool): string =
+  if value: "true" else: "false"
+
+
+proc readPeg*(grammar: Grammar, peg_spec: string) =
+  for line in peg_spec.splitLines().filter(is_not_space_only):
+    let predicate = read_peg_line(line)
+    grammar.add(predicate)
+
+
+proc newGrammar*(grammar_spec: string): Grammar =
+  result = newGrammar()
+  result.readPeg(grammar_spec)
+
+
+proc append(buffer: Stream, predline: string) =
+  write(buffer, "\n$#" % predline)
+
+
+proc copy_marked_for_extraction(pattern: string, targets: seq[string], subpatternRefs: seq[string]): string =
+  result = pattern
+  for target in targets:
+    # Only if target is a reference in the pattern
+    # which it is iff it occurs in the subpattern refs list
+    if target in subpatternRefs:
+      result = replace(result, target, "{$#}" % target)
+
+
+proc copy_sub(grammar:Grammar, root: string, dest: Grammar, targets: seq[string]) =
+  if not dest.rules.hasKey(root):
+    let pred = grammar.get(root)
+    let subpats = pred.subpatterns
+    let newpattern = pred.pattern.copy_marked_for_extraction(targets, subpats)
+    let predcopy = (name: pred.name, pattern: newpattern)
+    let subsstring = if len(subpats) == 0: "none" else: subpats.foldl(a & ", " & b)
+    echo "| $# >>> $#" % [$(predcopy), subsstring]
+    dest.add(predcopy)
+    for item in pred.subpatterns().items():
+      copy_sub(grammar, item, dest, targets)
+
+
+proc getVariant(grammar: Grammar, predName: string, variant: string): PegPredicate =
+  if variant.isEmpty:
+    grammar.get(predName)
+  else:
+    let variantKey = predName & ":" & variant
+    if grammar.rules.hasKey(variantKey):
+      grammar.get(variantKey)
+    else:
+      grammar.get(predName)
+
+
+proc writePredicate(buffer: Stream, grammar:Grammar, predName: string, doneItems: var HashSet, extractables: seq[string], variant: string) =
+  if not doneItems.contains(predName):
+    let pred = grammar.getVariant(predName, variant)
+    let subpats = pred.subpatterns
+    let newpattern = pred.pattern.copy_marked_for_extraction(extractables, subpats)
+    buffer.write("$# <- $#\n" % [predName, newpattern])
+    doneItems.incl(predName)
+    for item in subpats.items():
+      writePredicate(buffer, grammar, item, doneItems, extractables, variant)
+
+
+proc pegString*(grammar: Grammar, patternName: string, extractables: seq[string] = @[], variant: string = ""): string  =
+  var doneItems = initHashSet[string]()
+  var buffer: Stream = newStringStream()
+  writePredicate(buffer, grammar, patternName, doneItems, extractables, variant)
+  buffer.setPosition(0)
+  result = buffer.readAll()
+  echo "pegString ->\n" & result
+
+
+proc matcher*(grammar: Grammar, patternName: string): Peg =
+  peg(pegString(grammar, patternName))
+
+
+proc extractor*(grammar: Grammar, patternName: string, parts: seq[string], variant: string): Peg =
+  peg(pegString(grammar, patternName, parts, variant))
+
+
+proc newPatternExtractor*(grammar: Grammar, mainPattern: string, subpatterns: seq[string], variant: string = ""): PatternExtractor =
+  let extractorPeg = grammar.extractor(mainPattern, subpatterns, variant)
+  PatternExtractor(extractorPattern: extractorPeg, mainPatternName: mainPattern, subPatternNames: subpatterns)
+
+
+proc extract*(extractor: PatternExtractor, source: string): TableRef[string,string] =
+  ## Attempts to match the given string (source). If successful, then
+  ## the subparts are extracted and returned in a table, Every entry has the
+  ## grammar rule (PEG line) name as its key and the matched string as its value.
+  result = newTable[string, string]()
+  if source =~ extractor.extractorPattern:
+    echo foldMatches(matches)
+    for i in 0..extractor.subPatternNames.len-1:
+      result[extractor.subPatternNames[i]] = matches[i]
+  else:
+    raise newException(NoMatchError, "Pattern '$#' does not match string '$#'" %
+                      [extractor.mainPatternName, source])
