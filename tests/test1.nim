@@ -31,35 +31,14 @@ Naam <- [a-zA-Z]+
 Huisnr <- [0-9]+
 """
 
-let select_pegstring = """
-Select <- SelectClause FromClause WhereClause OrderClause? ';'
-SelectClause <- 'select' Spc TopExpr? SelectItems
-SelectItems <- SelectItem ',' Space SelectItems / SelectItem
-TopExpr <- 'TOP(' TopCount ')' Spc
-FromClause <- FromItem ',' Space FromClause / FromItem
-FromItem <- JoinClause / TableRef
-JoinClause <- JoinSpec Join JoinClause
-JoinSpec <- TableRef (Join TableRef JoinCriterium Space)+
-Join <- ('left' Space)? ('outer' / 'inner') Space 'join' Space
-JoinCriterium <- ColumnRef '=' ColumnRef
-TableRef <- Name (Space Name) Spc
-WhereClause <- 'where' Space
-OrderClause <- 'ascending' / 'descending' / 'asc' / 'desc'
-ColumnAlias <-  (Space AliasSpec)? Spc
-AliasSpec <- 'as' Space Name
-ColumnRef <- Name '.' Name
-Name <- [a-zA-Z] [a-zA-Z_0-9]*
-Sp <- ' '*
-Spc <- ' '+
-"""
-
-let toplevel_select_clauses_peg = """
+let select_statement_peg = """
 SelectStatement <- ^ SelectClause FromClause WhereClause OrderClause? !.
 SelectClause <- SelectStart SelectContent
 SelectContent <- (!FromStart .)+
 FromClause <- FromStart FromContent
-FromContent:detail <- FromList &WhereStart
-FromList <- TableRef JoinSpec*
+FromList <- FromFirstItem FromTail
+FromFirstItem <- TableRef
+FromTail <- .* !.
 JoinSpec <- Join TableRef JoinCriterium Space
 Join <- ('left' Space)? ('outer' / 'inner') Space 'join' Space
 JoinCriterium <- 'on' Space ColumnRef '=' ColumnRef
@@ -192,7 +171,7 @@ test "extraction two items":
 
 
 test "extraction select, from, where":
-  let grammar = newGrammar(toplevel_select_clauses_peg)
+  let grammar = newGrammar(select_statement_peg)
   let wp_extractor = grammar.newPatternExtractor("SelectStatement",
       @["SelectContent", "FromContent", "WhereContent", "OrderContent"])
   let extracted = wp_extractor.extract("select myselect from myfrom where mywhere ")
@@ -204,7 +183,7 @@ test "extraction select, from, where":
 
 
 test "extraction select, from, where, order":
-  let grammar = newGrammar(toplevel_select_clauses_peg)
+  let grammar = newGrammar(select_statement_peg)
   let wp_extractor = grammar.newPatternExtractor("SelectStatement",
       @["SelectContent", "FromContent", "WhereContent", "OrderContent"])
   let extracted = wp_extractor.extract("select myselect from myfrom where mywhere order by myorder ")
@@ -217,10 +196,31 @@ test "extraction select, from, where, order":
 
 test "extraction from with a table ref":
   let sql = "select myselect from tab t1 where blah "
-  let grammar = newGrammar(toplevel_select_clauses_peg)
+  let grammar = newGrammar(select_statement_peg)
   let wp_extractor = grammar.newPatternExtractor("SelectStatement",
-      @["SelectContent", "FromContent", "WhereContent"], "detail")
+      @["SelectContent", "FromContent", "WhereContent"])
   let extracted = wp_extractor.extract(sql)
   check extracted.len == 3
   check extracted["FromContent"] == "tab t1 "
+
+
+test "extraction from with a table join":
+  let sql = "select myselect from tab t1 inner join tab2 t2 on t1.x = t2.y  where blah "
+  let grammar = newGrammar(select_statement_peg)
+  let top_extractor = grammar.newPatternExtractor("SelectStatement",
+      @["SelectContent", "FromContent", "WhereContent"])
+  let extracted = top_extractor.extract(sql)
+  check extracted.len == 3
+  check extracted["FromContent"] == "tab t1 inner join tab2 t2 on t1.x = t2.y  "
+
+
+test "extraction from with a table join":
+  let sql = "tab t1 inner join tab2 t2 on t1.x = t2.y "
+  let grammar = newGrammar(select_statement_peg)
+  let top_extractor = grammar.newPatternExtractor("FromList",
+      @["FromFirstItem", "FromTail"])
+  let extracted = top_extractor.extract(sql)
+  check extracted.len == 2
+  check extracted["FromFirstItem"] == "tab t1 "
+  check extracted["FromTail"] == "inner join tab2 t2 on t1.x = t2.y "
 
