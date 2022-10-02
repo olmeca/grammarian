@@ -5,8 +5,8 @@
 #
 # To run these tests, simply execute `nimble test`.
 
-import unittest
-import grammarian, pegs, tables, strutils
+import unittest, pegs, tables, strutils
+import grammarian
 
 let peg_pegstring = """
   Pattern <- Alternative ('/' Sp  Alternative)*
@@ -138,7 +138,7 @@ test "serialize grammar":
   check grammar.get("Passed") == p1
 
 test "parse_predicate":
-  check read_peg_line("Anna  <- pweflyn2-3n*7&rv lweg") == (name: "Anna", pattern: "pweflyn2-3n*7&rv lweg")
+  check read_peg_line("Anna  <- pweflyn2-3n*7&rv lweg", "") == (name: "Anna", pattern: "pweflyn2-3n*7&rv lweg")
 
 
 test "read grammar":

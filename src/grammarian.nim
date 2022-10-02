@@ -24,6 +24,9 @@
 
 import pegs, tables, strutils, sequtils, streams, sets
 
+const
+  cVariantKeySeparator = ":"
+
 type
   PegPredicate* = tuple
     name: string
@@ -31,7 +34,7 @@ type
 
   Grammar* = ref object of RootObj
     ## This is the object that stores all the PEG lines
-    ## as 'grammer rules'.
+    ## as 'grammar rules'.
     rules: OrderedTableRef[string, string]
 
   PatternExtractor* = ref object of RootObj
@@ -56,7 +59,7 @@ type
   NoMatchError* = object of ValueError
 
 
-let peg_predicate_peg = peg"""
+let pattern_peg = peg"""
 Pattern <- ('^' ' '+)? Alternative ('/' Sp  Alternative)*
 Alternative <- SequenceItem+
 SequenceItem <- SuccessorPrefix? Sp Suffix
@@ -71,7 +74,7 @@ Word <- [a-zA-Z]+
 Sp <- ' '*
 """
 
-let peg_line_peg = peg"""
+let named_pattern_peg = peg"""
 PegLine <- Sp Name '<-' Sp Pattern !.
 Name <- {Word (':' Word)?} Sp
 Pattern <- {.+}
@@ -79,8 +82,10 @@ Word <- [a-zA-Z]+
 Sp <- ' '*
 """
 
-let whitespace_peg = peg"""
-Pattern <- ^ \s* !.
+let whitespaceOrCommentLinePeg = peg"""
+Pattern <- ^ Spc Comment? !.
+Spc <- \s*
+Comment <- '#' .*
 """
 
 proc isEmpty*(value: string): bool =
@@ -99,19 +104,25 @@ proc `$`(pred: PegPredicate): string =
   "$# <- $#" % [pred.name, pred.pattern]
 
 
-proc read_peg_line*(line: string): PegPredicate =
-  if line =~ peg_line_peg:
-    result = (name: matches[0], pattern: matches[1])
+proc pegKey(name: string, variant: string): string =
+  if variant.isEmpty():
+    name
+  else:
+    name & cVariantKeySeparator & variant
+
+proc read_peg_line*(line: string, variant: string): PegPredicate =
+  if line =~ named_pattern_peg:
+    result = (name: pegKey(matches[0], variant), pattern: matches[1])
   else:
     raise newException(PegPredicatePatternError, "Invalid PEG line: '$#'" % line);
 
 
-proc is_not_space_only(line: string): bool =
-  result = not (line =~ whitespace_peg)
+proc isNotCommentOrEmptyLine(line: string): bool =
+  result = not (line =~ whitespaceOrCommentLinePeg)
 
 
 proc subpatterns*(pattern: string): seq[string] =
-  if pattern =~ peg_predicate_peg:
+  if pattern =~ pattern_peg:
     result = matches.filter(notEmpty)
     # echo foldMatches(matches)
   else:
@@ -139,9 +150,9 @@ proc boolStr(value: bool): string =
   if value: "true" else: "false"
 
 
-proc readPeg*(grammar: Grammar, peg_spec: string) =
-  for line in peg_spec.splitLines().filter(is_not_space_only):
-    let predicate = read_peg_line(line)
+proc readPeg*(grammar: Grammar, peg_spec: string, variant: string = "") =
+  for line in peg_spec.splitLines().filter(isNotCommentOrEmptyLine):
+    let predicate = read_peg_line(line, variant)
     grammar.add(predicate)
 
 
@@ -163,28 +174,25 @@ proc copy_marked_for_extraction(pattern: string, targets: seq[string], subpatter
       result = replace(result, target, "{$#}" % target)
 
 
-proc copy_sub(grammar:Grammar, root: string, dest: Grammar, targets: seq[string]) =
-  if not dest.rules.hasKey(root):
-    let pred = grammar.get(root)
-    let subpats = pred.subpatterns
-    let newpattern = pred.pattern.copy_marked_for_extraction(targets, subpats)
-    let predcopy = (name: pred.name, pattern: newpattern)
-    let subsstring = if len(subpats) == 0: "none" else: subpats.foldl(a & ", " & b)
-    echo "| $# >>> $#" % [$(predcopy), subsstring]
-    dest.add(predcopy)
-    for item in pred.subpatterns().items():
-      copy_sub(grammar, item, dest, targets)
+# proc copy_sub(grammar:Grammar, root: string, dest: Grammar, targets: seq[string]) =
+#   if not dest.rules.hasKey(root):
+#     let pred = grammar.get(root)
+#     let subpats = pred.subpatterns
+#     let newpattern = pred.pattern.copy_marked_for_extraction(targets, subpats)
+#     let predcopy = (name: pred.name, pattern: newpattern)
+#     let subsstring = if len(subpats) == 0: "none" else: subpats.foldl(a & ", " & b)
+#     echo "| $# >>> $#" % [$(predcopy), subsstring]
+#     dest.add(predcopy)
+#     for item in pred.subpatterns().items():
+#       copy_sub(grammar, item, dest, targets)
 
 
 proc getVariant(grammar: Grammar, predName: string, variant: string): PegPredicate =
-  if variant.isEmpty:
-    grammar.get(predName)
+  let variantKey = pegKey(predName, variant)
+  if grammar.rules.hasKey(variantKey):
+    grammar.get(variantKey)
   else:
-    let variantKey = predName & ":" & variant
-    if grammar.rules.hasKey(variantKey):
-      grammar.get(variantKey)
-    else:
-      grammar.get(predName)
+    grammar.get(predName)
 
 
 proc writePredicate(buffer: Stream, grammar:Grammar, predName: string, doneItems: var HashSet, extractables: seq[string], variant: string) =
@@ -207,16 +215,16 @@ proc pegString*(grammar: Grammar, patternName: string, extractables: seq[string]
   echo "pegString ->\n" & result
 
 
-proc matcher*(grammar: Grammar, patternName: string): Peg =
+proc matcher*(grammar: Grammar, patternName: string = "Main"): Peg =
   peg(pegString(grammar, patternName))
 
 
-proc extractor*(grammar: Grammar, patternName: string, parts: seq[string], variant: string): Peg =
+proc extractorPeg(grammar: Grammar, patternName: string, parts: seq[string], variant: string): Peg =
   peg(pegString(grammar, patternName, parts, variant))
 
 
 proc newPatternExtractor*(grammar: Grammar, mainPattern: string, subpatterns: seq[string], variant: string = ""): PatternExtractor =
-  let extractorPeg = grammar.extractor(mainPattern, subpatterns, variant)
+  let extractorPeg = grammar.extractorPeg(mainPattern, subpatterns, variant)
   PatternExtractor(extractorPattern: extractorPeg, mainPatternName: mainPattern, subPatternNames: subpatterns)
 
 
