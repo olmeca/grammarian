@@ -66,8 +66,9 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- '(' Sp Pattern ')' Sp / '.' Sp / Literal / Charclass / Nonterminal !'<-'
+Primary <- '(' Sp Pattern ')' Sp / '.' Sp / Literal / EscapedChar / Charclass / Nonterminal !'<-'
 Literal <- ['] (!['] .)* ['] Sp
+EscapedChar <- '\\' [0-9]+ Sp
 Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
 Nonterminal <- {Word} Sp
 Word <- [a-zA-Z]+

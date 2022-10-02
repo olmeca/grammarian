@@ -224,3 +224,16 @@ test "extraction from with a table join":
   check extracted["FromFirstItem"] == "tab t1 "
   check extracted["FromTail"] == "inner join tab2 t2 on t1.x = t2.y "
 
+test "Backslash chars":
+  let pattern = """
+  IssuerLine <- Sp 'Issuer: ' Issuer Lf
+  Issuer <- (!Lf .)+
+  Sp <- ' '+
+  Lf <- \10
+  """
+  let source = """
+     Issuer: Polifinario
+  """
+  let grammar = newGrammar(pattern)
+  let extractor = grammar.newPatternExtractor("IssuerLine", @["Issue"])
+  let extracted = extractor.extract(source)
