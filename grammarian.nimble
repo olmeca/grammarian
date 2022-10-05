@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.1"
+version       = "0.1.2"
 author        = "Rudi Angela"
 description   = "A facility for storing PEG patterns such that common phrases are not duplicated among patterns."
 license       = "GPL-3.0-or-later"

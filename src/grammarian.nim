@@ -22,7 +22,7 @@
 ## and from there retrieve specific PEG matchers when needed. It also allows you to postpone marking
 ## the subpatterns of interest for extraction until the moment you retrieve a PEG
 
-import pegs, tables, strutils, sequtils, streams, sets
+import pegs, tables, strutils, sequtils, streams, sets, logging
 
 const
   cVariantKeySeparator = ":"
@@ -75,12 +75,15 @@ Word <- [a-zA-Z]+
 Sp <- ' '*
 """
 
+let nonterminal_replacement_peg_template = "{(^ / \\W)} {'$#'} {(\\W / !.)}"
+
+
 let named_pattern_peg = peg"""
-PegLine <- Sp Name '<-' Sp Pattern !.
-Name <- {Word (':' Word)?} Sp
+PegLine <- Space Name '<-' Space Pattern !.
+Name <- {Word (':' Word)?} Space
 Pattern <- {.+}
 Word <- [a-zA-Z]+
-Sp <- ' '*
+Space <- ' '*
 """
 
 let whitespaceOrCommentLinePeg = peg"""
@@ -88,6 +91,7 @@ Pattern <- ^ Spc Comment? !.
 Spc <- \s*
 Comment <- '#' .*
 """
+
 
 proc isEmpty*(value: string): bool =
     value == ""
@@ -99,6 +103,13 @@ proc notEmpty*(value: string): bool =
 
 proc foldMatches*(source: array[0..19, string]): string =
     source.foldl(a & "|" & b)
+
+
+proc nonterminal_replacement_peg(nonterminal: string): Peg =
+  debug("ntrp: nt: '$#'" % nonterminal)
+  let pegstring = nonterminal_replacement_peg_template % nonterminal
+  debug("ntrp: pegstring = '$#'" % pegstring)
+  peg(pegstring)
 
 
 proc `$`(pred: PegPredicate): string =
@@ -125,7 +136,7 @@ proc isNotCommentOrEmptyLine(line: string): bool =
 proc subpatterns*(pattern: string): seq[string] =
   if pattern =~ pattern_peg:
     result = matches.filter(notEmpty)
-    # echo foldMatches(matches)
+    debug("subpatterns matches: $#" % foldMatches(matches))
   else:
     raise newException(PegPredicatePatternError, pattern)
 
@@ -166,13 +177,15 @@ proc append(buffer: Stream, predline: string) =
   write(buffer, "\n$#" % predline)
 
 
-proc copy_marked_for_extraction(pattern: string, targets: seq[string], subpatternRefs: seq[string]): string =
+proc mark4x(nonterminal: string): string =
+  "{$#}" % nonterminal
+
+proc mark4x*(pattern: string, targets: seq[string]): string =
   result = pattern
   for target in targets:
-    # Only if target is a reference in the pattern
-    # which it is iff it occurs in the subpattern refs list
-    if target in subpatternRefs:
-      result = replace(result, target, "{$#}" % target)
+    debug("mark4x: marking '$#' in '$#'" % [target, result])
+    result = replacef(result, nonterminal_replacement_peg(target), "$1{$2}$3")
+  debug("mark4x returning '$#'" % result)
 
 
 # proc copy_sub(grammar:Grammar, root: string, dest: Grammar, targets: seq[string]) =
@@ -198,9 +211,9 @@ proc getVariant(grammar: Grammar, predName: string, variant: string): PegPredica
 
 proc writePredicate(buffer: Stream, grammar:Grammar, predName: string, doneItems: var HashSet, extractables: seq[string], variant: string) =
   if not doneItems.contains(predName):
-    let pred = grammar.getVariant(predName, variant)
-    let subpats = pred.subpatterns
-    let newpattern = pred.pattern.copy_marked_for_extraction(extractables, subpats)
+    let pred = getVariant(grammar, predName, variant)
+    let subpats = subpatterns(pred)
+    let newpattern = mark4x(pred.pattern, extractables)
     buffer.write("$# <- $#\n" % [predName, newpattern])
     doneItems.incl(predName)
     for item in subpats.items():
