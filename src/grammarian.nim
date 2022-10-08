@@ -27,7 +27,11 @@ import pegs, tables, strutils, sequtils, streams, sets, logging
 const
   cVariantKeySeparator = ":"
 
+
 type
+  NonTerminalNameError* = object of Exception
+  NonTerminalCaptureError* = object of Exception
+
   PegPredicate* = tuple
     name: string
     pattern: string
@@ -58,6 +62,24 @@ type
     ## with an unrecognized name.
   NoMatchError* = object of ValueError
 
+# pattern template for finding a given word in a string
+let word_pat_tpl = """
+Pattern <- ^ WordSection Pattern / WordSection
+WordSection <- NonWord* Word WordEnd
+NonWord <- (![a-zA-Z] .)*
+Word <- {Target} / \w+
+Target <- '$#'
+WordEnd <- \w*
+"""
+
+let quoted_string_pat* = peg"""
+QuotedString <- {UpToQuote} ({Quote} {UpToQuote} {Quote} {UpToEnd})?
+UpToQuote <- (!Quote .)*
+UpToEnd <- .* (!.)
+Quote <- \39
+"""
+
+let single_word_pat* = peg"^ \w+ !."
 
 let pattern_peg = peg"""
 Pattern <- ('^' ' '+)? Alternative ('/' Sp  Alternative)*
@@ -75,7 +97,15 @@ Word <- [a-zA-Z]+
 Sp <- ' '*
 """
 
-let nonterminal_replacement_peg_template = "{(^ / \\W)} {'$#'} {(\\W / !.)}"
+let nonterminal_replacement_peg_template = """
+WordSection <- {Preamble} {Word} !Letter
+Preamble <- (!Letter .)*
+Word <- '$#'
+Letter <- [a-zA-Z]
+"""
+
+
+  #"{(^ / \\W)} {'$#'} {(\\W / !.)}"
 
 
 let named_pattern_peg = peg"""
@@ -108,7 +138,7 @@ proc foldMatches*(source: array[0..19, string]): string =
 proc nonterminal_replacement_peg(nonterminal: string): Peg =
   debug("ntrp: nt: '$#'" % nonterminal)
   let pegstring = nonterminal_replacement_peg_template % nonterminal
-  debug("ntrp: pegstring = '$#'" % pegstring)
+  debug("ntrp returning: pegstring = '$#'" % pegstring)
   peg(pegstring)
 
 
@@ -177,15 +207,53 @@ proc append(buffer: Stream, predline: string) =
   write(buffer, "\n$#" % predline)
 
 
-proc mark4x(nonterminal: string): string =
-  "{$#}" % nonterminal
 
-proc mark4x*(pattern: string, targets: seq[string]): string =
+proc contains_word(source: string, target: string): bool =
+  source.match(peg(word_pat_tpl % target))
+
+
+proc replace_nonterminals(buf: StringStream, source: string, name: string) =
+  if name.match(single_word_pat):
+    if source =~ quoted_string_pat:
+      buf.write(replacef(matches[0], nonterminal_replacement_peg(name), "$1{$2}"))
+      # If a quoted string was found
+      if matches[1] == "'":
+        # Write opening quote
+        buf.write(matches[1])
+        buf.write(matches[2])
+        # Write closing quote
+        buf.write(matches[3])
+        # If residual string exists then recurse
+        if notEmpty(matches[4]):
+          replace_nonterminals(buf, matches[4], name)
+    else:
+      buf.write(replacef(source, nonterminal_replacement_peg(name), "$1{$2}"))
+  else:
+    raise newException(NonTerminalNameError, name)
+
+proc replace_nonterminal*(source: string, nonterm_name: string): string =
+  var buf = newStringStream()
+  replace_nonterminals(buf, source, nonterm_name)
+  result = buf.data
+
+proc check_quoted_occurrence(source: string, target: string) =
+  if target.match(single_word_pat):
+    if source =~ quoted_string_pat:
+      if matches.filter(proc(s: string): bool = s.contains_word(target)).len > 0:
+        raise newException(NonTerminalCaptureError, target)
+      else: discard
+    else: discard
+  else:
+    raise newException(NonTerminalNameError, target)
+
+
+proc mark4capture*(pattern: string, nonterminals: seq[string]): string =
   result = pattern
-  for target in targets:
-    debug("mark4x: marking '$#' in '$#'" % [target, result])
-    result = replacef(result, nonterminal_replacement_peg(target), "$1{$2}$3")
-  debug("mark4x returning '$#'" % result)
+  for nonterm in nonterminals:
+    debug("mark4capture: marking '$#' in '$#'" % [nonterm, result])
+    result = replace_nonterminal(result, nonterm)
+    #result = replacef(result, nonterminal_replacement_peg(nonterm), "$1{$2}")
+  debug("mark4capture returning '$#'" % result)
 
 
 # proc copy_sub(grammar:Grammar, root: string, dest: Grammar, targets: seq[string]) =
@@ -213,7 +281,7 @@ proc writePredicate(buffer: Stream, grammar:Grammar, predName: string, doneItems
   if not doneItems.contains(predName):
     let pred = getVariant(grammar, predName, variant)
     let subpats = subpatterns(pred)
-    let newpattern = mark4x(pred.pattern, extractables)
+    let newpattern = mark4capture(pred.pattern, extractables)
     buffer.write("$# <- $#\n" % [predName, newpattern])
     doneItems.incl(predName)
     for item in subpats.items():
