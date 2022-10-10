@@ -68,7 +68,7 @@ proc enableLogging() =
   setLogFilter(lvlDebug)
 
 
-#enableLogging()
+# enableLogging()
 
 suite "NonTerminals":
 
@@ -158,7 +158,70 @@ suite "NonTerminals":
   test "word pattern with non-letter":
     check not "me.com".match(single_word_pat)
 
+suite "namesection":
+  test "name only":
+    check "name <- pattern".match(named_pattern_peg)
 
+  test "found parts":
+    if " name <- pattern " =~ named_pattern_peg:
+      check matches[0] == " name "
+      check matches[1] == " pattern "
+
+  test "full name part matches":
+    check " name:variant<a, b> ".match(name_section_peg)
+
+  test "name and variant matches":
+    check " name:variant ".match(name_section_peg)
+
+  test "name and params matches":
+    check " name <a, b> ".match(name_section_peg)
+
+  test "full name part contents match":
+    if " name:variant<a, b> " =~ name_section_peg:
+      check matches[0] == "name"
+      check matches[1] == "variant"
+      check matches[2] == "a, b"
+
+  test "name and variant contents match":
+    if " name:variant " =~ name_section_peg:
+      check matches[0] == "name"
+      check matches[1] == "variant"
+      check matches[2] == ""
+
+  test "name and params contents match":
+    if " name <a, b> " =~ name_section_peg:
+      debug(foldMatches(matches))
+      check matches[0] == "name"
+      check matches[1] == ""
+      check matches[2] == "a, b"
+
+suite "lineparsing":
+  test "name only":
+    let pred = $(read_peg_line("name <- value "))
+    check pred == "name ''<> <- value "
+
+  test "name variant":
+    let pred = $(read_peg_line("name:var <- value "))
+    check pred == "name 'var'<> <- value "
+
+  test "name variant params":
+    let pred = $(read_peg_line("name:var<a,b> <- value "))
+    check pred == "name 'var'<a, b> <- value "
+
+  test "name variant spaced params":
+    let pred = $(read_peg_line("name:var< a, b > <- value "))
+    check pred == "name 'var'<a, b> <- value "
+
+  test "name spaced params":
+    let pred = $(read_peg_line("name< a, b > <- value "))
+    check pred == "name ''<a, b> <- value "
+
+  test "name one params":
+    let pred = $(read_peg_line("name< a > <- value "))
+    check pred == "name ''<a> <- value "
+
+
+suite "capture":
   test "mark4capture 1":
     check mark4capture("Jij Bent Gek", @["Bent"]) == "Jij {Bent} Gek"
 
@@ -207,9 +270,9 @@ suite "NonTerminals":
 suite "Grammars":
   test "create grammar":
     let grammar = newGrammar()
-    let p1 = (name: "Passed", pattern:"'true'")
-    let p2 = (name: "Failed", pattern:"'false'")
-    grammar.add((name: "Test", pattern:"Passed / Failed"))
+    let p1 = newPegPredicate("Passed", "'true'")
+    let p2 = newPegPredicate("Failed", "'false'")
+    grammar.add(newPegPredicate("Test", "Passed / Failed"))
     grammar.add(p1)
     grammar.add(p2)
     check grammar.get("Passed") == p1
@@ -217,15 +280,12 @@ suite "Grammars":
 
   test "serialize grammar":
     let grammar = newGrammar()
-    let p1 = (name: "Passed", pattern:"'true'")
-    let p2 = (name: "Failed", pattern:"'false'")
-    grammar.add((name: "Test", pattern:"Passed / Failed"))
+    let p1 = newPegPredicate("Passed", "'true'")
+    let p2 = newPegPredicate("Failed", "'false'")
+    grammar.add(newPegPredicate("Test", "Passed / Failed"))
     grammar.add(p1)
     grammar.add(p2)
     check grammar.get("Passed") == p1
-
-  test "parse_predicate":
-    check read_peg_line("Anna  <- pweflyn2-3n*7&rv lweg", "") == (name: "Anna", pattern: "pweflyn2-3n*7&rv lweg")
 
 
   test "read grammar":

@@ -32,25 +32,27 @@ type
   NonTerminalNameError* = object of Exception
   NonTerminalCaptureError* = object of Exception
 
-  PegPredicate* = tuple
+  PegPredicate* = object
     name: string
+    variant: string
+    parameters: seq[string]
     pattern: string
 
   Grammar* = ref object of RootObj
     ## This is the object that stores all the PEG lines
     ## as 'grammar rules'.
-    rules: OrderedTableRef[string, string]
+    rules: seq[PegPredicate]
 
   PatternExtractor* = ref object of RootObj
     ## This object wraps a Peg that can be used to
     ## extract parts of a matched text. It also knows
-    ## the names of the marked subpatterns in the Peg.
+    ## the nonterminals in the Peg to be marked for extraction.
     ## This is used when matching en extracting parts:
     ## the matches are returned as a table using these
     ## names as keys to the matched values.
     extractorPattern: Peg
     mainPatternName: string
-    subPatternNames: seq[string]
+    targetNonterminals: seq[string]
 
   PegPredicatePatternError* = object of ValueError
     ## This error is raised when a Grammar object attempts
@@ -61,6 +63,7 @@ type
     ## processes a request for a grammar rule (PEG line)
     ## with an unrecognized name.
   NoMatchError* = object of ValueError
+  MultipleMatchingPredicatesError* = object of ValueError
 
 # pattern template for finding a given word in a string
 let word_pat_tpl = """
@@ -82,7 +85,7 @@ Quote <- \39
 let single_word_pat* = peg"^ \w+ !."
 
 let pattern_peg = peg"""
-Pattern <- ('^' ' '+)? Alternative ('/' Sp  Alternative)*
+Pattern <- Sp ('^' ' '+)? Alternative ('/' Sp  Alternative)*
 Alternative <- SequenceItem+
 SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
@@ -108,12 +111,23 @@ Letter <- [a-zA-Z]
   #"{(^ / \\W)} {'$#'} {(\\W / !.)}"
 
 
-let named_pattern_peg = peg"""
-PegLine <- Space Name '<-' Space Pattern !.
-Name <- {Word (':' Word)?} Space
-Pattern <- {.+}
-Word <- [a-zA-Z]+
-Space <- ' '*
+let named_pattern_peg* = peg"""
+PegLine <- {NamePart} Arrow {PatternPart}
+NamePart <- (!Arrow .)+
+Arrow <- '<-'
+PatternPart <- UpToEnd
+UpToEnd <- .* (!.)
+"""
+
+let name_section_peg* = peg"""
+NameSection <- Spc {RuleName} Spc OptVariant OptParams
+RuleName <- Name
+OptVariant <- (':' {Name}) / {Empty}
+OptParams <- ('<' {UpToParEnd}) / {Empty}
+UpToParEnd <- (!'>' .)+
+Name <- [a-zA-Z]+
+Spc <- \s*
+Empty <- ''
 """
 
 let whitespaceOrCommentLinePeg = peg"""
@@ -122,17 +136,23 @@ Spc <- \s*
 Comment <- '#' .*
 """
 
+let peg_params_peg = peg"""
+Params <- Sp {Param} Sep Params / Sp {Param}
+Param <- [a-zA-Z]+
+Sep <- ',' Sp
+Sp <- ' '*
+"""
 
 proc isEmpty*(value: string): bool =
-    value == ""
+  value == ""
 
 
 proc notEmpty*(value: string): bool =
-    not value.isEmpty
+  not value.isEmpty
 
 
 proc foldMatches*(source: array[0..19, string]): string =
-    source.foldl(a & "|" & b)
+  source.foldl(a & "|" & b)
 
 
 proc nonterminal_replacement_peg(nonterminal: string): Peg =
@@ -142,19 +162,37 @@ proc nonterminal_replacement_peg(nonterminal: string): Peg =
   peg(pegstring)
 
 
-proc `$`(pred: PegPredicate): string =
-  "$# <- $#" % [pred.name, pred.pattern]
+proc `$`*(pred: PegPredicate): string =
+  "$# '$#'<$#> <-$#" % [pred.name, pred.variant, join(pred.parameters, ", "), pred.pattern]
 
 
-proc pegKey(name: string, variant: string): string =
-  if variant.isEmpty():
-    name
+proc newPegPredicate*(name: string, pattern: string, variant = "", params: seq[string] = @[]): PegPredicate =
+  PegPredicate(name: name, variant: variant, parameters: params, pattern: pattern)
+
+proc read_peg_params(source: string): seq[string] =
+  debug("read_peg_params: '$#'" % source)
+  if len(source) > 0:
+    if source =~ peg_params_peg:
+      debug(foldMatches(matches))
+      result = matches.filter(notEmpty)
+    else:
+      raise newException(PegPredicatePatternError, "Invalid PEG parameter specification: <$#>" % source)
   else:
-    name & cVariantKeySeparator & variant
+    result = @[]
 
-proc read_peg_line*(line: string, variant: string): PegPredicate =
+proc read_peg_parts(namepart: string, patternpart: string): PegPredicate =
+  if namepart =~ name_section_peg:
+    debug(foldMatches(matches))
+    let name = matches[0]
+    let variant = matches[1]
+    let params = if matches[2].notEmpty: read_peg_params(matches[2]) else: @[]
+    result = newPegPredicate(name, patternpart, variant, params)
+  else:
+    raise newException(PegPredicatePatternError, "Invalid LHS: '$#'" % namepart);
+
+proc read_peg_line*(line: string): PegPredicate =
   if line =~ named_pattern_peg:
-    result = (name: pegKey(matches[0], variant), pattern: matches[1])
+    read_peg_parts(matches[0], matches[1])
   else:
     raise newException(PegPredicatePatternError, "Invalid PEG line: '$#'" % line);
 
@@ -164,6 +202,7 @@ proc isNotCommentOrEmptyLine(line: string): bool =
 
 
 proc subpatterns*(pattern: string): seq[string] =
+  debug("subpatterns: pattern: '$#'" % pattern)
   if pattern =~ pattern_peg:
     result = matches.filter(notEmpty)
     debug("subpatterns matches: $#" % foldMatches(matches))
@@ -176,16 +215,29 @@ proc subpatterns*(pred: PegPredicate): seq[string] =
 
 
 proc newGrammar*(): Grammar =
-  Grammar(rules: newOrderedTable[string, string]())
+  Grammar(rules: @[])
 
+proc hasValues(r: PegPredicate, name: string, variant: string, params: seq[string]): bool =
+  r.name == name and r.variant == variant and len(r.parameters) == len params
 
-proc get*(grammar: Grammar, key: string): PegPredicate =
-  result = (name: key, pattern: grammar.rules[key])
+proc get*(grammar: Grammar, name: string, variant: string = "", params: seq[string] = @[]): PegPredicate =
+  var found = grammar.rules.filter(proc (r: PegPredicate): bool = r.hasValues(name, variant, params))
+  if len(found) == 0 and variant != "":
+    found = grammar.rules.filter(proc (r: PegPredicate): bool = r.hasValues(name, "", params))
+  else: discard
+  if len(found) == 1:
+    result = found[0]
+  elif len(found) == 0:
+    raise newException(NoSuchPredicateError,
+      "No predicate found matching '$#:$#' with $# parameters." % [name, variant, intToStr(len(params))])
+  else:
+    raise newException(MultipleMatchingPredicatesError,
+    "More than one predicate found matching '$#:$#' with $# parameters." % [name, variant, intToStr(len(params))])
 
 
 proc add*(grammar: Grammar, pred: PegPredicate) =
   # result = not base.rules.hasKey(predicate.name)
-  grammar.rules[pred.name] = pred.pattern
+  grammar.rules.add(pred)
 
 
 proc boolStr(value: bool): string =
@@ -194,8 +246,10 @@ proc boolStr(value: bool): string =
 
 proc readPeg*(grammar: Grammar, peg_spec: string, variant: string = "") =
   for line in peg_spec.splitLines().filter(isNotCommentOrEmptyLine):
-    let predicate = read_peg_line(line, variant)
-    grammar.add(predicate)
+    let predicate = read_peg_line(line)
+    if predicate.variant == "" or predicate.variant == variant:
+      grammar.add(predicate)
+    else: discard
 
 
 proc newGrammar*(grammar_spec: string): Grammar =
@@ -236,16 +290,6 @@ proc replace_nonterminal*(source: string, nonterm_name: string): string =
   replace_nonterminals(buf, source, nonterm_name)
   result = buf.data
 
-proc check_quoted_occurrence(source: string, target: string) =
-  if target.match(single_word_pat):
-    if source =~ quoted_string_pat:
-      if matches.filter(proc(s: string): bool = s.contains_word(target)).len > 0:
-        raise newException(NonTerminalCaptureError, target)
-      else: discard
-    else: discard
-  else:
-    raise newException(NonTerminalNameError, target)
-
 
 proc mark4capture*(pattern: string, nonterminals: seq[string]): string =
   result = pattern
@@ -269,17 +313,9 @@ proc mark4capture*(pattern: string, nonterminals: seq[string]): string =
 #       copy_sub(grammar, item, dest, targets)
 
 
-proc getVariant(grammar: Grammar, predName: string, variant: string): PegPredicate =
-  let variantKey = pegKey(predName, variant)
-  if grammar.rules.hasKey(variantKey):
-    grammar.get(variantKey)
-  else:
-    grammar.get(predName)
-
-
 proc writePredicate(buffer: Stream, grammar:Grammar, predName: string, doneItems: var HashSet, extractables: seq[string], variant: string) =
   if not doneItems.contains(predName):
-    let pred = getVariant(grammar, predName, variant)
+    let pred = get(grammar, predName, variant)
     let subpats = subpatterns(pred)
     let newpattern = mark4capture(pred.pattern, extractables)
     buffer.write("$# <- $#\n" % [predName, newpattern])
@@ -294,7 +330,7 @@ proc pegString*(grammar: Grammar, patternName: string, extractables: seq[string]
   writePredicate(buffer, grammar, patternName, doneItems, extractables, variant)
   buffer.setPosition(0)
   result = buffer.readAll()
-  echo "pegString ->\n" & result
+  debug ("pegString ->\n" & result)
 
 
 proc matcher*(grammar: Grammar, patternName: string = "Main"): Peg =
@@ -305,9 +341,9 @@ proc extractorPeg(grammar: Grammar, patternName: string, parts: seq[string], var
   peg(pegString(grammar, patternName, parts, variant))
 
 
-proc newPatternExtractor*(grammar: Grammar, mainPattern: string, subpatterns: seq[string], variant: string = ""): PatternExtractor =
-  let extractorPeg = grammar.extractorPeg(mainPattern, subpatterns, variant)
-  PatternExtractor(extractorPattern: extractorPeg, mainPatternName: mainPattern, subPatternNames: subpatterns)
+proc newPatternExtractor*(grammar: Grammar, mainPattern: string, targets: seq[string], variant: string = ""): PatternExtractor =
+  let extractorPeg = grammar.extractorPeg(mainPattern, targets, variant)
+  PatternExtractor(extractorPattern: extractorPeg, mainPatternName: mainPattern, targetNonterminals: targets)
 
 
 proc extract*(extractor: PatternExtractor, source: string): TableRef[string,string] =
@@ -316,9 +352,9 @@ proc extract*(extractor: PatternExtractor, source: string): TableRef[string,stri
   ## grammar rule (PEG line) name as its key and the matched string as its value.
   result = newTable[string, string]()
   if source =~ extractor.extractorPattern:
-    echo foldMatches(matches)
-    for i in 0..extractor.subPatternNames.len-1:
-      result[extractor.subPatternNames[i]] = matches[i]
+    debug(foldMatches(matches))
+    for i in 0..extractor.targetNonterminals.len-1:
+      result[extractor.targetNonterminals[i]] = matches[i]
   else:
     raise newException(NoMatchError, "Pattern '$#' does not match string '$#'" %
                       [extractor.mainPatternName, source])
