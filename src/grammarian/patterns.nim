@@ -1,5 +1,29 @@
 import pegs
 
+let rule_params_peg* = peg"""
+Params <- {Pattern} ',' Sp Params / {Pattern}
+Pattern <- Alternative '/' Sp Pattern / Alternative
+Alternative <- SequenceItem+
+SequenceItem <- SuccessorPrefix? Sp Suffix
+SuccessorPrefix <- [!&]
+Suffix <- Primary CardinalityIndicator? Sp
+CardinalityIndicator <- [*+?]
+Primary <- Composite / '^' Sp / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+Composite <- ParOpen Sp SubPattern ParClose Sp
+SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
+PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
+ParOpen <- '('
+ParClose <- ')'
+NonTerminal <- Word Sp
+Literal <- ['] (!['] .)* ['] Sp
+EscapedChar <- '\\' [0-9]+ Sp
+BuiltIn <- '\\' [a-z]+ Sp
+Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
+Word <- [a-zA-Z]+
+Sp <- ' '*
+"""
+
+
 let rule_peg_alternatives* = peg"""
 Pattern <- {Alternative} '/' Sp Pattern / {Alternative}
 Alternative <- SequenceItem+
@@ -7,7 +31,7 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- Composite / '^' Sp / '.' Sp / Literal / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / Literal/ BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -15,6 +39,7 @@ ParOpen <- '('
 ParClose <- ')'
 NonTerminal <- RuleRef RuleParams
 Literal <- ['] (!['] .)* ['] Sp
+BuiltIn <- '\\' [a-z]+ Sp
 EscapedChar <- '\\' [0-9]+ Sp
 Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
 RuleRef <- Word Sp
@@ -30,7 +55,7 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- Composite / '^' Sp / '.' Sp / Literal / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -38,6 +63,7 @@ ParOpen <- '('
 ParClose <- ')'
 NonTerminal <- RuleRef RuleParams
 Literal <- ['] (!['] .)* ['] Sp
+BuiltIn <- '\\' [a-z]+ Sp
 EscapedChar <- '\\' [0-9]+ Sp
 Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
 RuleRef <- Word Sp
@@ -52,7 +78,7 @@ let rule_peg_item* = peg"""
 SequenceItem <- {SuccessorPrefix} Sp {Primary} {CardinalityIndicator} Sp
 SuccessorPrefix <- [!&] / ''
 CardinalityIndicator <- [*+?] / ''
-Primary <- Composite / '.' Sp / Literal / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -60,6 +86,7 @@ ParOpen <- '('
 ParClose <- ')'
 NonTerminal <- RuleRef RuleParams
 Literal <- ['] (!['] .)* ['] Sp
+BuiltIn <- '\\' [a-z]+ Sp
 EscapedChar <- '\\' [0-9]+ Sp
 Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
 RuleRef <- Word Sp

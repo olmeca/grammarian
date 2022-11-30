@@ -1,26 +1,45 @@
 ## Grammarian extends the utility of Nim's PEG library when handling complex text structures
-## like e.g. the structure of a programming language, aimed at the use case where the
-## text involved is created by hand. Human errors need to be handled in a user friendly way
-## by providing more detailed feedback than 'The text does not match the pattern'. This requires
-## breaking down the parsing process into smaller parts. When the parse of a part of the text
-## fails the offending part can be pointed to. This means the user can look at a smaller
-## haystack to find the offending needle. Though it is possible to divide the parsing process
-## into small pieces using only the PEG library, I have found it challenging when dealing with
-## recursive structures, like nested expressions (e.g. SQL query with subqueries). A recursive
-## structure can be easily described in one PEG spec., that is not the problem addressed here.
-## If a large handwritten text (with recursive structures) has an error somewhere it is desirable
-## to be able to point the user to a small part of the text where it doesn't match the structure
-## specification. Therefore it is desirable to break the matching of the whole text into smaller
-## matches carried out on subparts. In general this can also be easily done with the PEG library,
-## except when there is recursion involved. When you try to break down the PEG description of a
-## recursive structure into smaller PEG specs. you will find yourself repeating the same PEG
-## lines in multiple specs. This is a consequence of the recursive nature of the structure.
-## Repeating yourself means redundancy and maintenance overhead. When you discover you need to
-## improve a PEG line you will have to walk through all the separate PEG specs you used it in.
-## Grammarian aims at minimizing or even eliminating such duplication. It does this by allowing
-## you to describe your recursive structure in one meta-PEG specification, which I call a Grammar,
-## and from there retrieve specific PEG matchers when needed. It also allows you to postpone marking
-## the subpatterns of interest for extraction until the moment you retrieve a PEG
+## like e.g. the structure of a programming language. It aims to simplify the task of extracting
+## data from such text structures, by means of a number of features:
+## 1- It allows you to keep all PEG rules describing one OR MORE text structures together
+## in one store, called a Grammar. When you need a PEG for a substructure you can retrieve
+## it from the store by rule name (rule being one PEG line, name == left of the '<-'). Taking
+## the given rule as root, all other rules reachable from the root are retrieved recursively.
+## The result is a consistent set of rules: a valid PEG.
+## 2- Rules can have variants. Imagine targetting SQL statements. Most of the language constructs
+## are equal among the mainstream DBMS's. But here and there are small syntax variations between
+## SQL 'dialects'. Besides a main rule describing the most common syntax you can add variants
+## to the same rule, describing the vendor-specific syntax. Example:
+## General syntax rule        :  DateString <- ......
+## Vendor specific syntax rule:  DateString:oracle <- .....
+## When requesting a PEG from the store, you specify the root rule name and also the variant.
+## Now when retrieving all the rules the system will prefer the given variant, but will
+## fall back to the non-specific version of the rule. Again, the result is a consistent PEG.
+## 3- When requesting a PEG from the store you can also specify a list of rule names, a.k.a.
+## 'extraction targets'. All occurrences of these names as non-terminals will be marked for
+## capture. Given a rule "SelectClause <- 'SELECT' \s+ Columns FromClause ....", if you
+## specify ["Colums"] as targets, the resulting rule in the PEG string retrieved will read:
+## "SelectClause <- 'SELECT' \s+ {Columns} FromClause ....".
+## 4- Parameterized rules help eliminate duplication. Imagine a structure that is identical
+## among different use cases, but in some use cases should contain numbers, but in other use
+## cases should be filled with textual content. Parameterized rules enable using one rule
+## defining the overall structure, but allow you to specify the contents pattern as an
+## argument in your non-terminal, referring to the parameterized rule. An elementary
+## example would be the textual representation of some list. Generally speaking, this is
+## textual items separated by some textual delimiter. Examples: words separated by spaces,
+## or numbers separated by a comma. The general rule can be described as follows:
+## "List<Item, Separator> <- Item Separator List<Item, Separator> / Item"
+## Another rule could then specify a comma separated list of numbers as follows:
+## "InClause <- 'IN' \s* '(' List<Number, Comma> ')' \s*".
+## The resulting PEG would contain among others the following four rules:
+## "List_Number_Comma <- Number Comma List_Number_Comma / Number"
+## "InClause <- 'IN' \s* '(' List_Number_Comma ')' \s*".
+## "Number <- ... (assuming you have such a rule in your store)
+## "Comma <- ...  (idem ditto)
+## In the above the parameterized rule was applied using non-terminals as arguments.
+## However, you can also use terminal expressions as arguments, for example:
+## "InClause <- 'IN' \s* '(' List<[0-9]+, ','> ')' \s*".
+## For more example please review the unit tests.
 
 import pegs, tables, strutils, sequtils, streams, sets, logging, sugar, hashes
 import grammarian/patterns
@@ -92,6 +111,7 @@ Quote <- \39
 
 let single_word_pat* = peg"^ \w+ !."
 
+let name_pattern = peg"^ [a-z,A-Z] [a-z,A-Z0-9_]* !."
 
 let ruleref_parts_peg = peg"""
 Pattern <- ^ Sp RuleRefSpec !.
@@ -140,7 +160,7 @@ RuleName <- Name
 OptVariant <- (':' {Name}) / {Empty}
 OptParams <- ('<' {UpToParEnd}) / {Empty}
 UpToParEnd <- (!'>' .)+
-Name <- [a-zA-Z]+
+Name <-  [a-zA-Z] [a-zA-Z0-9_]*
 Spc <- \s*
 Empty <- ''
 """
@@ -160,8 +180,13 @@ Sp <- ' '*
 
 proc resolveChoice(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef], ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream)
 
-func nameForPattern(pattern: string): string =
-  "Pat$#" % intToStr(hash(pattern))
+proc nominate(pattern: string): string =
+  # Creates an identifying name for the given pattern
+  # if it is not already a valid name (non-terminal)
+  if pattern =~ name_pattern:
+    pattern
+  else:
+    "p$#" % intToStr(hash(pattern))
 
 func isEmpty*[T](list: seq[T]): bool =
   count(list) == 0
@@ -188,8 +213,8 @@ proc fuse(name: string, args: seq[string] = @[]): string =
   let fusedParams = args.map(x => "_$#" % x).join("")
   result = "$#$#" % [name, fusedParams]
 
-proc serialize*(ruleref: RuleRef, paramValues: seq[string] = ruleref.parameters): string =
-  result = fuse(ruleref.name, paramValues)
+proc serialize*(ruleref: RuleRef, args: seq[string] = ruleref.parameters): string =
+  result = fuse(ruleref.name, args.map(a => nominate(a)))
   if ruleref.capture:
     result = captured(result)
   else: discard
@@ -218,15 +243,18 @@ proc newRuleRef*(name: string, params: seq[string] = @[], mark: bool = false): R
 proc parseRuleParams(source: string): seq[string] =
   if source.isEmpty:
     result = @[]
-  elif source =~ word_list_peg:
+  elif source =~ rule_params_peg:
     result = matches.filter(notEmpty)
   else:
     raise newException(ParamListError, source)
 
+proc isNonTerminal(ruleRef: RuleRef): bool =
+  ruleRef.name.match(name_pattern)
+
 proc parseRuleRef*(ruleref: string): RuleRef =
   debug("parseRuleRef: '$#'" % ruleref)
   if ruleref =~ ruleref_parts_peg:
-    debug("parseRuleRef - RuleRef parts: <$#>" % foldMatches(matches))
+    debug("parseRuleRef - RuleRef parts found: <$#>" % foldMatches(matches))
     let ruleName = matches[0]
     let ruleParams = if matches[1] == "": @[] else: parseRuleParams(matches[1])
     result = RuleRef(name: ruleName, parameters: ruleParams)
@@ -242,7 +270,7 @@ func eqRuleRef(r1: RuleRef, r2: RuleRef): bool =
   r1.name == r2.name and sequal(r1.parameters, r2.parameters)
 
 func applier*(rule: Rule, args: seq[string]): RuleRes =
-  RuleRes(name: fuse(rule.name, args), rule: rule, args: args)
+  RuleRes(name: fuse(rule.name, args.map(a => nominate(a))), rule: rule, args: args)
 
 func applier*(rule: Rule, ruleRef: RuleRef): RuleRes =
   RuleRes(name: serialize(ruleRef), rule: rule, args: ruleRef.parameters)
@@ -250,12 +278,19 @@ func applier*(rule: Rule, ruleRef: RuleRef): RuleRes =
 func refersTo(ruleRef: RuleRef, rule: Rule): bool =
   ruleRef.name == rule.name and sequal(ruleRef.parameters, rule.parameters)
 
-func replaceParamByValue*(ruleRes: RuleRes, param: string): string =
+proc replaceParamByValue*(ruleRes: RuleRes, param: string, doNominate: bool = false): string =
   let parindex = find(ruleRes.rule.parameters, param)
-  if parindex < 0: param else: ruleRes.args[parindex]
+  debug("replaceParamByValue: '$#', index: $#" % [param, intToStr(parindex)])
+  if parindex < 0:
+    param
+  elif ruleRes.args[parindex] =~ name_pattern:
+    ruleRes.args[parindex]
+  else:
+    # Terminal expressions must be parenthesized (i.e. macro substitution)
+    "($#)" % ruleRes.args[parindex]
 
 proc resolveRuleRef*(ruleRes: RuleRes, ruleRef: RuleRef, targets: seq[RuleRef] = @[]): RuleRef =
-  debug("resolveRuleRef - [$#]" % join(targets.map(t => serialize(t)), ", "))
+  debug("resolveRuleRef resolver: [$#], ruleRef: [$#]" % [$(ruleRes), $(ruleRef)])
   var theRuleRef: RuleRef
   # if ruleRef is a recursive reference
   if ruleRef.name == ruleRes.rule.name:
@@ -280,18 +315,6 @@ proc resolveRuleRef*(ruleRes: RuleRes, ruleRef: RuleRef, targets: seq[RuleRef] =
   if targets.filter(r => serialize(r) == serialize(theRuleRef)).len > 0:
     theRuleRef.capture = true
   result = theRuleRef
-
-
-proc resolveRuleRefSpec(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef], ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream) =
-  let ruleRef: RuleRef = parseRuleRef(patSpec)
-  debug("resolveRuleRefSpec - parsed ruleref [$#]" % ruleRef.serialize)
-  let resolvedRuleRef = resolveRuleRef(ruleRes, ruleRef, targets)
-  # Only add if not already containing item with same resolved name
-  if ruleRefAcc.filter(r => r.name == resolvedRuleRef.name).len == 0:
-    ruleRefAcc.add(resolvedRuleRef)
-  else: discard
-  debug("resolveRuleRefSpec - writing: [$#]" % $(resolvedRuleRef))
-  patAccBuf.write(serialize(resolvedRuleRef) & ' ')
 
 
 proc resolveSequenceItem(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef], ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream) =
@@ -319,7 +342,7 @@ proc resolveSequenceItem(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef
       # write cardinality indicator (*, + or ?)
       patAccBuf.write(cardinalityIndicator)
       # Only add if not recursive
-      if not ruleRef.refersTo(ruleRes.rule):
+      if resolvedRuleRef.isNonTerminal and not ruleRef.refersTo(ruleRes.rule):
         # Only add if not already containing item with same resolved name
         if ruleRefAcc.filter(r => r.eqRuleRef(resolvedRuleRef)).len == 0:
           ruleRefAcc.add(resolvedRuleRef)
@@ -481,13 +504,11 @@ proc boolStr(value: bool): string =
   if value: "true" else: "false"
 
 
-proc readPeg*(grammar: Grammar, grammarSpec: string, variant: string = "") =
+proc readPeg(grammar: Grammar, grammarSpec: string) =
   for line in grammarSpec.splitLines().filter(isNotCommentOrEmptyLine):
     debug("readPeg '$#'" % line)
     let rule = read_peg_line(line)
-    if rule.variant == "" or rule.variant == variant:
-      grammar.rules.add(rule)
-    else: discard
+    grammar.rules.add(rule)
 
 
 proc newGrammar*(grammarSpec: string): Grammar =

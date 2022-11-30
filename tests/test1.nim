@@ -68,7 +68,7 @@ proc enableLogging() =
   setLogFilter(lvlDebug)
 
 
-# enableLogging()
+enableLogging()
 
 suite "NonTerminals":
 
@@ -136,6 +136,49 @@ suite "namesection":
       check matches[0] == "name"
       check matches[1] == ""
       check matches[2] == "a, b"
+
+  test "non-terminal param match":
+    check "Test".match(rule_params_peg)
+
+  test "non-terminal param list match":
+    check "Test, Param".match(rule_params_peg)
+
+  test "non-terminal param list with spaces match":
+    check " Test, Param ".match(rule_params_peg)
+
+  test "param list literals match":
+    check "'test', 'Param'".match(rule_params_peg)
+
+  test " param list literals cardinal match":
+    check "'test'+, 'Param'?".match(rule_params_peg)
+
+  test " param list literals successor match":
+    check "!'test', &'Param'".match(rule_params_peg)
+
+  test " param list literals successor and cardinal match":
+    check "!'test'*, &'Param'?".match(rule_params_peg)
+
+  test "param list with charset match":
+    check " [a-z0-9]+, Param ".match(rule_params_peg)
+
+  test "param list any char match":
+    check " .+, Param ".match(rule_params_peg)
+
+  test "param list any char match":
+    check " .?, .* ".match(rule_params_peg)
+
+  test "param list escaped char match":
+    check " \\13 \\10, Param ".match(rule_params_peg)
+
+  test "param list alternatives match":
+    check " 'a' / 'b', [a-z]+ / [0-9]* ".match(rule_params_peg)
+
+  test "param list sequence match":
+    check " 'a'  'b', [a-z]+  [0-9]* ".match(rule_params_peg)
+
+  test "param list sequence match":
+    check " ('a' / 'b')+, ([a-z]+ / [0-9]*) 'test' ".match(rule_params_peg)
+
 
 suite "lineparsing":
 #   test "name only":
@@ -210,6 +253,10 @@ suite "ruleRefResolution":
     let ruleRef = newRuleRef("TestRule", @["Een", "Twee"])
     check applier(newRule(@["One", "Two"]), ruleRef).resolveRuleRef(ruleRef, @[ruleRef]).serialize == "{TestRule_Een_Twee}"
 
+  test "two literal params, no targets":
+    let ruleRef = newRuleRef("TestRule", @["'a'", "'b'"])
+    check applier(newRule(@["One", "Two"]), ruleRef).resolveRuleRef(ruleRef).serialize == "TestRule_p2183385484_p517476560"
+
 
 proc mark4capture(pattern: string, targets: seq[string]): string =
   let rule = newRule("Dummy", pattern)
@@ -282,6 +329,18 @@ suite "patternresolution":
     let value = buf.readAll().strip
     debug("Value: '$#'" % value)
     check value == "Word Space List_Word_Space / Word"
+
+  test "resolve rule with one literal arg":
+    var buf = newStringStream()
+    var subs: seq[RuleRef]
+    let ruleRef = newRuleRef("List", @["'a'"])
+    let rule = newRule("List", "Item Sep List<Item> / Item", "", @["Item"])
+    let resolver = applier(rule, ruleRef)
+    resolver.resolvePatternSpec("Item Sep List<Item> / Item", @[], subs, buf)
+    setPosition(buf, 0)
+    check buf.readAll().strip == "'a' Sep List_p2183385484 / 'a'"
+
+
 
 proc testPattern(pattern: Peg, source: string) =
   debug("testing '$#'" % source)
@@ -484,7 +543,8 @@ suite "grammars":
     let extractor = newGrammar(valuesSpec).extractorPeg(@["Value"])
     if "Value: een.twee.drie" =~ extractor:
       check matches[0] == "een.twee.drie"
-    else: discard
+    else:
+      raise newException(NoMatchError, "No match.")
 
 
 suite "Matchers":
