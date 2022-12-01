@@ -73,3 +73,23 @@ When you retrieve a rule set from the store that would involve these rules, what
 List_Number_Comma <- Number Comma List_Number_Comma / Number
 InClause <- 'IN' \s* '(' List_Number_Comma ')' \s*
 ```
+Here the rule is *applied* to the arguments which yields a *resolved* rule. The name of the resolved rule
+is derived from the original rule's name and the arguments. As in this case the arguments 'Number' and
+'Comma' are non-terminals, i.e. pure names, they can be directly incorporated into the resolved rule's name.
+This gives a resolved rule name that is unique for the combination of rule and arguments and is also 
+meaningful.
+Another variation is with arguments that are not themselves non-terminal. Imagine instead using terminals:
+```
+InClause <- 'IN' \s* '(' List<\d+, ','> ')' \s*
+```
+Combined with the same List rule, this expression would result in the following:
+```
+List_p2258791698_p3582574359 <- Number Comma List_p2258791698_p3582574359 / Number
+InClause <- 'IN' \s* '(' List_p2258791698_p3582574359 ')' \s*
+```
+Now the resolved rule's name contains meaningless numbers instead of meaningful names. The reason is that
+terminal expressions like the above "\d+" cannot be part of a rule name. A rule name must consist of
+letters, digits and underscores. But we must resolve to a rule name that is unique to the combination
+of the original rule's name and the arguments. This is solved by using hashes of the argument values.
+The numbers in the resolved rule name are these hashes.
+
