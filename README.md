@@ -27,13 +27,47 @@ Grammarian offers a store for PEG rules, called a *Grammar*, from where you can 
 ruleset for use. The intended use is for storing the grammar of some complex textual structure (a grammar), or 
 even storage of multiple grammars. When retrieving a rule set from the store you specify a root rule name. This
 results in a rule set containing this root rule and all the rules referred directly or indirectly (a DAG).
+For example, the following set of rules describe two textual data types: email addresses and URL's. These types
+have some similarity in their composition. E.g. both contain a domain name. 
+```
+Url <- Protocol '://' Host '.' Domain '/' Path
+EmailAddress <- AccountName '@' DomainName
+AccountName <- Chars
+DomainName <- Chars '.' Chars
+Protocol <- 'https' / 'http'
+Host <- Chars '.' Host / Chars
+Path <- PathItem '/' Path / PathItem
+Chars <- [a-z]+
+PathItem <- [a-z-]+
+```
+The ability to define both types in one rule set would help eliminate duplication, in this example, of the
+domain description. Using Grammarian you can use the above combined definition and create PEG objects
+for any contained rule, by name:
+```
+# Assuming the string myRuleSet is the above rule set string
+let grammar = newGrammar(myRuleSet)
+let emailAddressPeg = grammar.matcher("EmailAddress")
+# emailAddressPeg would be a PEG object based on this subset of rules:
+EmailAddress <- AccountName '@' DomainName
+AccountName <- Chars
+DomainName <- Chars '.' Chars
+Chars <- [a-z]+
+```
 Though called a *store* here, a *Grammar* is just an in memory object. 
 ### Feature 2: Rule (set) variants
 Imagine a PEG rule set describing SQL statements. Most of the rules would apply to all mainstream DBMS's. But
 there are always some minor differences in syntax between the DBMS's. With the plain PEG library you would have
 to use multiple rulesets, even though the content of the rulesets would be for 95% identical. Grammarian 
 addresses this by introducing _rule variants_. A rule variant is a rule that is tagged with a variant name.
-There may be multiple rules with the same name, but different variant tags.
+There may be multiple rules with the same name, but different variant tags. For example the ANSI SQL datatype
+_FLOAT4_ is called _FLOAT_ in MySQL and _REAL_ in PostgreSQL. This can be captured using Grammarian, with the
+following PEG rules:
+```
+Float4 <- 'FLOAT' / 'float4'
+Float4:MySql <- 'FLOAT' / 'float'
+Float4:Postres <- 'REAL' / 'real'
+```
+The tag is appended to the rule name, with a colon as separator.
 When requesting a rule set from the store you can specify a variant. When looking up a rule, Grammarian will
 first search for a rule with the given name and the given variant tag. If not found then it will search for
 a rule only by name. This means you only need to create rule variants for the corner cases.
@@ -45,6 +79,39 @@ Grammarian addresses this issue by letting you store the rule set(s) untagged in
 a ruleset from the store you can specify a list of rule names. All rule names except the root rule's are
 also none-terminals in some other rule. All non-terminals whose names were specified in the list will be
 marked for extraction in the rule set retrieved from the store.
+As an example, imagine a (somwhat simplified) PEG describing web page URL's:
+```
+Url <- Protocol '://' Host '/' Path '?' Parameters
+Protocol <- 'https' / 'http'
+Host <- Chars '.' Host / Chars
+Path <- PathItem '/' Path / PathItem
+Parameters <- KeyValue '&' Parameters / KeyValue
+KeyValue <- Key '=' Value
+Chars <- [a-z]+
+PathItem <- [a-z-]+
+Key <- [a-zA-Z0-9_]+
+Value <- [a-zA-Z0-9_+-]+ / ''
+```
+This can be used for multiple extraction use case: extracting host names, paths, parameters, to name a few.
+But for every case you would have to use an adapted version of this PEG. For example, to extract host names
+you would have to adapt the first rule like so:
+```
+Url <- Protocol '://' {Host} '/' Path '?' Parameters
+```
+But to extract the individual parameters, you would instead have to adapt this rule:
+```
+Parameters <- {KeyValue} '&' Parameters / {KeyValue}
+```
+Using Grammarian you would create a Grammar object using the above URL description PEG and then ask it for
+a PEG, passing as parameters the desired capture items:
+```
+let grammar = newGrammar(pegString)
+let paramsPeg = grammar.extractorPeg(["KeyValue"]
+let hostPeg = grammar.extractorPeg(["Host"])
+# Marking multiple items for capture:
+let protocolAndHostPeg = grammar.extractorPeg(["Protocol", "Host"])
+
+```
 This mechanism only works for non-terminals! Keep this in mind when defining your PEG rules. Any terminal
 expression can be put into a separate rule and then you can specify the rule name for capture.
 ### Feature 4: Parameterized rules
