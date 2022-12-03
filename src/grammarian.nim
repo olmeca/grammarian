@@ -102,13 +102,6 @@ Word <- \w+
 Remains <- .* (!.)
 """
 
-let quoted_string_pat* = peg"""
-QuotedString <- {UpToQuote} ({Quote} {UpToQuote} {Quote} {UpToEnd})?
-UpToQuote <- (!Quote .)*
-UpToEnd <- .* (!.)
-Quote <- \39
-"""
-
 
 let name_pattern = peg"^ [a-z,A-Z] [a-z,A-Z0-9_]* !."
 
