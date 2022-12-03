@@ -10,6 +10,8 @@ Naam <- [a-zA-Z]+
 Huisnr <- [0-9]+
 """
 
+enableLogging()
+
 proc listMatch(item: string, sep: string, source: string): string =
     let valuesSpec = """
     Main <- 'Value: ' Value

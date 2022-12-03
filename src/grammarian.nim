@@ -109,7 +109,6 @@ UpToEnd <- .* (!.)
 Quote <- \39
 """
 
-let single_word_pat* = peg"^ \w+ !."
 
 let name_pattern = peg"^ [a-z,A-Z] [a-z,A-Z0-9_]* !."
 
@@ -177,6 +176,12 @@ Word <- [a-zA-Z]+
 Sep <- ',' Sp
 Sp <- ' '*
 """
+
+proc enableLogging*() =
+  var logger = newConsoleLogger()
+  addHandler(logger)
+  setLogFilter(lvlDebug)
+
 
 proc resolveChoice(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef], ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream)
 

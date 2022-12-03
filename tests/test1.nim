@@ -8,20 +8,6 @@
 import unittest, pegs, tables, strutils, logging, streams, sequtils, sugar
 import grammarian, grammarian/patterns
 
-let peg_pegstring = """
-  Pattern <- Alternative ('/' Sp  Alternative)*
-  Alternative <- SequenceItem+
-  SequenceItem <- SuccessorPrefix? Sp Suffix
-  SuccessorPrefix <- [!&]
-  Suffix <- Primary CardinalityIndicator? Sp
-  CardinalityIndicator <- [*+?]
-  Primary <- '(' Sp Pattern ')' Sp / '.' Sp / Literal / Charclass / NonTerminal !'<-'
-  Literal <- ['] (!['] .)* ['] Sp
-  Charclass <- '[' (!']' (. '-' . / .))+ ']' Sp
-  NonTerminal <- Word Sp
-  Word <- [a-zA-Z]+
-  Sp <- ' '*
-"""
 let adres_spec = """
 Adres <- StraatHuis ',' ' '+ Woonplaats
 StraatHuis <- Straat ' '+ Huisnr
@@ -62,45 +48,10 @@ Space <- ' '+
 Spc <- ' '*
 """
 
-proc enableLogging() =
-  var logger = newConsoleLogger()
-  addHandler(logger)
-  setLogFilter(lvlDebug)
-
 
 enableLogging()
 
-suite "NonTerminals":
-
-  # test "Backslash chars":
-  #   let pattern = """
-  #   IssuerLine <- Sp Label ': ' Issuer Lf
-  #   Label <- [A-Za-z]+
-  #   Issuer <- (!Lf .)+
-  #   Sp <- ' '+
-  #   Lf <- \10
-  #   """
-  #   let source = """
-  #      Issuer: Polifinario
-  #   """
-  #   let grammar = newGrammar(pattern)
-  #   let extractor = grammar.newPatternExtractor("IssuerLine", @["Issue"])
-  #   let extracted = extractor.extract(source)
-
-
-  test "word pattern with space at end":
-    check not "word ".match(single_word_pat)
-
-  test "word pattern starting with space":
-    check not " word ".match(single_word_pat)
-
-  test "word pattern with two words":
-    check not "word two".match(single_word_pat)
-
-  test "word pattern with non-letter":
-    check not "me.com".match(single_word_pat)
-
-suite "namesection":
+suite "rulename":
   test "name only":
     check "name <- pattern".match(named_rule_peg)
 
@@ -338,7 +289,7 @@ suite "patternresolution":
     let resolver = applier(rule, ruleRef)
     resolver.resolvePatternSpec("Item Sep List<Item> / Item", @[], subs, buf)
     setPosition(buf, 0)
-    check buf.readAll().strip == "'a' Sep List_p2183385484 / 'a'"
+    check buf.readAll().strip == "('a') Sep List_p2183385484 / ('a')"
 
 
 
