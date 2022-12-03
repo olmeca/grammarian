@@ -572,3 +572,11 @@ proc newPatternExtractor*(grammar: Grammar, mainPattern: string, targets: seq[st
   let extractorPatPeg = grammar.extractorPeg(targets, mainPattern, variant)
   PatternExtractor(extractorPattern: extractorPatPeg, targetNonterminals: targets)
 
+proc extract*(extractor: PatternExtractor, source: string): TableRef[string, string] =
+  # Supposing the matches found in the same order as in extractor.targetNonTerminals
+  result = newTable[string, string]()
+  if source =~ extractor.extractorPattern:
+    for i, key in extractor.targetNonterminals:
+      result[key] = matches[i]
+  else:
+    raise newException(NoMatchError, "String does not match pattern.")
