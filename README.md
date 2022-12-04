@@ -13,7 +13,7 @@ repeated for every substructure you want to address. In the end you have multipl
 in small parts. If you then discover a bug in your original PEG then you may have to fix it in all the 
 substructure PEG's.
 ### PEG (Parsing Expression Grammar) 101
-At the very low level PEG's built-in matchers are quite similar to those offered by _Regex_. But whilst Regex
+At the very low level, PEG's built-in matchers are quite similar to those offered by _Regex_. But whilst Regex
 requires you to express the pattern only in terms of the built-in matchers, PEG also allows higher level
 abstract patterns, which _describe the structure_ and _identify the parts_, but do **not** 
 _describe the details of the parts_. It's like stating that an email address consists of in sequence a user name, an '@'
@@ -32,8 +32,8 @@ A rule starts with a name followed by a left arrow (<-) and a _pattern_.
 In a PEG there is one _root_ rule which may refer to other rules, forming a DAG. In this example the
 first rule _EmailAddress_ is the root rule.
 ### PEG Inconveniences
-1. Nim's PEG requires all the rules in a PEG to form one DAG. It throws an error if any rule is not referred to 
-by other rules.
+1. Nim's PEG implementation requires all the rules in a PEG to form one DAG. It throws an error if any rule is not referred to 
+by other rules (this may be a characteristic of every PEG implementation, I only know Nim's).
 2. A PEG can only be used to match the pattern described by the whole DAG (i.e. the pattern described by root rule) 
    The above example PEG contains sufficient information for matching only domain names (not as part of an email address),
    but there is no way use only a part of a PEG for matching.
