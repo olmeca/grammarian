@@ -1,5 +1,6 @@
 # grammarian
-A wrapper for Nim's PEG library, that simplifies handling of complex PEG's.
+A wrapper for Nim's PEG library, that supports extensions to Nim's PEG DSL, 
+that simplify handling of complex PEG's.
 ### Rationale
 As an avid user of the PEG library I have attempted matching / parsing ever more complex textual structures. 
 I have learned that Nim's PEG can handle the complexity without ever breaking a sweat. Yet I noted that some
@@ -11,13 +12,31 @@ only the parts that describe the substructure of interest and the mark the parts
 repeated for every substructure you want to address. In the end you have multiple PEG rulesets that only differ
 in small parts. If you then discover a bug in your original PEG then you may have to fix it in all the 
 substructure PEG's.
-### PEG rule sets
-A PEG rule set is a set of rules, where one rule may refer to other rules, forming a DAG. There is one *root*
-rule and all the rules in a valid PEG rule set are directly or indirectly referred by the root rule. A set 
-that contains any rule that is not referred by any other rule is not a valid set in Nim's PEG implementation.
-As a consequence you get an error if you try to use such a rule set for matching. This is inconvenient when
-developing rule sets. Imagine your compiler refusing to compile your code because some functions are not being
-used.
+### PEG (Parsing Expression Grammar) 101
+At the very low level PEG's built-in matchers are quite similar to those offered by _Regex_. But whilst Regex
+requires you to express the pattern only in terms of the built-in matchers, PEG also allows higher level
+abstract patterns, which _describe the structure_ and _identify the parts_, but do **not** 
+_describe the details of the parts_. It's like stating that an email address consists of in sequence a user name, an '@'
+and a domain name. The structure (a sequence) is specified, one of the parts (the '@') is specified and two parts
+have been identified, but not specified (user name and domain name). In PEG you identify a part by giving it a
+unique name (of your choice). Parts identified in one PEG pattern can be specified in another pattern. 
+Here is where pattern names come into play. In a PEG every pattern is named. I use the term _Rule_. 
+A rule has a name and a pattern. For every subpart name mentioned in a pattern the PEG should also include
+a rule with that name, of which the pattern describes the details of the subpart. Example:
+```
+EmailAddress <- UserName '@' DomainName
+UserName <- [a-z]+
+DomainName <- [a-z]+ ('.' [a-z]+)*
+```
+A rule starts with a name followed by a left arrow (<-) and a _pattern_. 
+In a PEG there is one _root_ rule which may refer to other rules, forming a DAG. In this example the
+first rule _EmailAddress_ is the root rule.
+### PEG Inconveniences
+1. Nim's PEG requires all the rules in a PEG to form one DAG. It throws an error if any rule is not referred to 
+by other rules.
+2. A PEG can only be used to match the pattern described by the whole DAG (i.e. the pattern described by root rule) 
+   The above example PEG contains sufficient information for matching only domain names (not as part of an email address),
+   but there is no way use only a part of a PEG for matching.
 ### Grammarian
 Grammarian offers a couple of features that help eliminate the duplication and mitigate the rigidity of the
 plain PEG library. Some of these features are based on extensions to the PEG DSL. Grammarian will interpret
@@ -25,7 +44,7 @@ these extensions and will produce standard PEG DSL pattern rules.
 ### Feature 1: more flexible PEG composition / decomposition
 Grammarian offers a store for PEG rules, called a *Grammar*, from where you can easily retrieve a consistent PEG 
 ruleset for use. The intended use is for storing the grammar of some complex textual structure (a grammar), or 
-even storage of multiple grammars. When retrieving a rule set from the store you specify a root rule name. This
+even storage of multiple grammars. When retrieving a rule set from the store you _specify a root rule name_. This
 results in a rule set containing this root rule and all the rules referred directly or indirectly (a DAG).
 For example, the following set of rules describe two textual data types: email addresses and URL's. These types
 have some similarity in their composition. E.g. both contain a domain name. 
@@ -158,5 +177,71 @@ Now the resolved rule's name contains meaningless numbers instead of meaningful 
 terminal expressions like the above "\d+" cannot be part of a rule name. A rule name must consist of
 letters, digits and underscores. But we must resolve to a rule name that is unique to the combination
 of the original rule's name and the arguments. This is solved by using hashes of the argument values.
-The numbers in the resolved rule name are these hashes.
+The numbers in the resolved rule name are these hashes. Note that you never need to deal directly with
+these generated names. The exist only in an intermediate step towards creating the PEG you retrieve from
+the Grammar object.
 
+### Feature 5: Named values extractor
+The above explained that a Grammar will provide you a standard PEG, which you can then use for matching
+like you would do with any non-grammar generated PEG. Nim's matching mechanism will return a fixed array containing
+the matched values.
+For convenience, the Grammar can also provide you an Extractor object. An Extractor consists of a PEG and a list
+of non-terminals to be captured. An _extract_ function, when passed an Extractor and an input string,
+will return a hash table, containing the captured items as entries. The keys are the non-terminal names and
+the values are the captured strings from the input provided. An example:
+```
+let grammar = newGrammar(myPegString)
+let extractor = grammar.newPatternExtractor(myRootNonTerminal, myNonTerminalsToCapture)
+let foundItems = extractor.extract(myInputString)
+```
+I have found this to often be more convenient than retrieving the PEG from the Grammar, performing the match
+and then extracting the items one by one from the match results array. 
+
+### How to use Grammarian
+1- Just add Grammarian as a dependency to your project's _.nimble_ file:
+```
+requires "grammarian >= 0.2.0"
+```
+2- Add an import statement to your source file:
+```
+import grammarian
+```
+3- Call grammarian functions: 
+1. Create a Grammar object, providing a string that represents a PEG rule set. This
+rule set may also contain the extension expressions described under the Feature sections.
+2. Retrieve a standard PEG from the Grammar, by calling either the function _matcher()_
+   (for a PEG without any captures) or _extractorPeg()_ for a PEG with captures.
+3. Use the obtained PEG for your matching purposes.
+```
+let grammar = newGrammar(myPegRuleSet)
+let myRootNonTerminal = "EmailAddress"
+
+# Using a PEG to determine whether a string matches or not
+let matcherPeg = grammar.matcher(myRootNonTerminal)
+let success = "admin@example.com".match(matcherPeg)
+
+# Create a PEG to extract user name and domain name
+let myCaptureTargets = @["UserName", "DomainName"]
+let capturingPeg = newExtractorPeg(grammar, myRootNonTerminal, myCaptureTargets)
+# Use this PEG to match and capture
+if "admin@example.com" =~ capturingPeg:
+   let userName = matches[0]
+   let domainName = matches[1]
+else: discard
+```
+Alternatively you can use the convenience Extractor:
+```
+# Using an Extractor object
+let extractor = newPatternExtractor(grammar, myRootNonTerminal, myCaptureTargets)
+let foundItems = extractor.extract("admin@example.com")
+let userName = foundItems["UserName"]
+let domainName = foundItems["DomainName"]
+```
+If you ever run into a situation where you don't understand the results of your
+matching attempts, you might want to look at the textual representation of the PEG
+that is produced by the Grammar. For this you can use the function _pegString()_:
+```
+echo pegString(grammar, myRootNonTerminal)
+echo pegString(grammar, myRootNonTerminal, myCaptureTargets)
+```
+Examples with variants will be added soon.
