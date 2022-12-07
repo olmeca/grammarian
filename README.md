@@ -237,11 +237,4 @@ let foundItems = extractor.extract("admin@example.com")
 let userName = foundItems["UserName"]
 let domainName = foundItems["DomainName"]
 ```
-If you ever run into a situation where you don't understand the results of your
-matching attempts, you might want to look at the textual representation of the PEG
-that is produced by the Grammar. For this you can use the function _pegString()_:
-```
-echo pegString(grammar, myRootNonTerminal)
-echo pegString(grammar, myRootNonTerminal, myCaptureTargets)
-```
 Examples with variants will be added soon.
