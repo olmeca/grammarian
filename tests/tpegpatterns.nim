@@ -26,14 +26,26 @@ suite "patternmatch":
   test "pattern match item !non-terminal":
     testPattern(rule_peg_item, "!One")
 
-  test "pattern match item !non-terminal +":
-    testPattern(rule_peg_item, "&One+")
+  test "pattern match item @non-terminal +":
+    testPattern(rule_peg_item, "@One+")
 
   test "pattern match item composite":
     testPattern(rule_peg_item, "(One / Two)+")
 
+  test "pattern match item @composite":
+    testPattern(rule_peg_item, "@(One / Two)+")
+
+  test "pattern match item case insensitive composite":
+    testPattern(rule_peg_item, "i(One / Two)+")
+
   test "pattern match item charset +":
     testPattern(rule_peg_item, "[a-z]+")
+
+  test "pattern match case insensitive charset +":
+    testPattern(rule_peg_item, "i[a-z]+")
+
+  test "pattern match backref":
+    testPattern(rule_peg_item, "i[a-z]+ $12")
 
   test "pattern match item & charset +":
     testPattern(rule_peg_item, "&[a-z] +")

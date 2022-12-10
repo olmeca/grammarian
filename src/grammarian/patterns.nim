@@ -8,7 +8,9 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- Composite / '^' Sp / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / '_' Sp / LiteralOrBackRef / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+LiteralOrBackRef <- Modifier? Literal Sp
+Modifier <- [iyv]
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -31,7 +33,12 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- Composite / '^' Sp / '.' Sp / Literal/ BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / '_' Sp / LiteralOrBackRef / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-' / CapturedSearch / Search
+Search <- '@'
+CapturedSearch <- '{@}'
+LiteralOrBackRef <- Modifier? (Literal / BackRef) Sp
+Modifier <- [iyv]
+BackRef <- '$' \d+
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -55,7 +62,12 @@ SequenceItem <- SuccessorPrefix? Sp Suffix
 SuccessorPrefix <- [!&]
 Suffix <- Primary CardinalityIndicator? Sp
 CardinalityIndicator <- [*+?]
-Primary <- Composite / '^' Sp / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / '_' Sp / LiteralOrBackRef / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-' / CapturedSearch / Search
+Search <- '@'
+CapturedSearch <- '{@}'
+LiteralOrBackRef <- Modifier? (Literal / BackRef) Sp
+Modifier <- [iyv]
+BackRef <- '$' \d+
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
@@ -78,7 +90,12 @@ let rule_peg_item* = peg"""
 SequenceItem <- {SuccessorPrefix} Sp {Primary} {CardinalityIndicator} Sp
 SuccessorPrefix <- [!&] / ''
 CardinalityIndicator <- [*+?] / ''
-Primary <- Composite / '.' Sp / Literal / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-'
+Primary <- Composite / '^' Sp / '.' Sp / '_' Sp / LiteralOrBackRef / BuiltIn / EscapedChar / Charclass / NonTerminal !'<-' / CapturedSearch / Search
+Search <- '@'
+CapturedSearch <- '{@}'
+LiteralOrBackRef <- Modifier? (Literal / BackRef) Sp
+Modifier <- [iyv]
+BackRef <- '$' \d+
 Composite <- ParOpen Sp SubPattern ParClose Sp
 SubPattern <- PatternTopLevelString (Composite PatternTopLevelString)*
 PatternTopLevelString <- ( ! (ParOpen / ParClose) .)*
