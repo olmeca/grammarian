@@ -125,7 +125,7 @@ Using Grammarian you would create a Grammar object using the above URL descripti
 a PEG, passing as parameters the desired capture items:
 ```
 let grammar = newGrammar(pegString)
-let paramsPeg = grammar.extractorPeg(["KeyValue"]
+let paramsPeg = grammar.extractorPeg(["KeyValue"])
 let hostPeg = grammar.extractorPeg(["Host"])
 # Marking multiple items for capture:
 let protocolAndHostPeg = grammar.extractorPeg(["Protocol", "Host"])
