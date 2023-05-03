@@ -1,2 +1,11 @@
 .idea
 tests/test1
+/grammarian
+/tests/tcapture
+/tests/textractparam
+/tests/tgrammars
+/tests/tpegpatterns
+/tests/tpegs
+/tests/tresolution
+/tests/trulepattern
+/tests/tutils
