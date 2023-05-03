@@ -12,6 +12,7 @@ only the parts that describe the substructure of interest and the mark the parts
 repeated for every substructure you want to address. In the end you have multiple PEG rulesets that only differ
 in small parts. If you then discover a bug in your original PEG then you may have to fix it in all the 
 substructure PEG's.
+
 ### PEG (Parsing Expression Grammar) 101
 At the very low level, PEG's built-in matchers are quite similar to those offered by _Regex_. But whilst Regex
 requires you to express the pattern only in terms of the built-in matchers, PEG also allows higher level
