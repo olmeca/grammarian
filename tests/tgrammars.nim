@@ -1,10 +1,10 @@
 import unittest, pegs
-import grammarian, grammarian/patterns
+import grammarian, grammarian/patterns, grammarian/common
 
 
 suite "grammars":
   let valuesSpec = """
-  Main <- 'Value:' Sp Value
+  Pattern <- 'Value:' Sp Value
   Value <- List<Ident, Dot> / List<Number, Comma>
   PackageName <- List<Ident, Dot>
   Csv <- List<Number, Comma>
@@ -91,12 +91,12 @@ suite "grammars":
 
 
   test "grammar matcher simple":
-    let grammar = newGrammar("Main <- 'Value: ' [0-9]+")
-    let pattern = grammar.matcher("Main")
+    let grammar = newGrammar("Pattern <- 'Value: ' [0-9]+")
+    let pattern = grammar.matcher("Pattern")
     check "Value: 12345" =~ pattern
 
   test "grammar matcher complex":
-    let pattern = newGrammar(valuesSpec).matcher("Main")
+    let pattern = newGrammar(valuesSpec).matcher("Pattern")
     check "Value: 12345" =~ pattern
 
   test "grammar extractor complex":

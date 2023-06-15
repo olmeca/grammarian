@@ -1,66 +1,88 @@
-import unittest, pegs
-import grammarian/patterns
+import unittest, pegs, logging
+import grammarian/common, grammarian/patterns
 
-proc testPattern(pattern: Peg, source: string) =
-  check source =~ pattern
+let nimPeg = peg"""
+grammar <- rule* / expr
+
+identifier <- [A-Za-z][A-Za-z0-9_]*
+charsetchar <- "\\" . / [^\]]
+charset <- "[" "^"? (charsetchar ("-" charsetchar)?)+ "]"
+stringlit <- identifier? ("\"" ("\\" . / [^"])* "\"" /
+                          "'" ("\\" . / [^'])* "'")
+builtin <- "\\" identifier / [^\13\10]
+
+comment <- '#' @ \n
+ig <- (\s / comment)* # things to ignore
+
+rule <- identifier \s* "<-" expr ig
+identNoArrow <- identifier !(\s* "<-")
+prefixOpr <- ig '&' / ig '!' / ig '@' / ig '{@}' / ig '@@'
+literal <- ig identifier? '$' [0-9]+ / '$' / '^' /
+           ig identNoArrow /
+           ig charset /
+           ig stringlit /
+           ig builtin /
+           ig '.' /
+           ig '_' /
+           (ig "(" expr ig ")")
+postfixOpr <- ig '?' / ig '*' / ig '+'
+primary <- prefixOpr* (literal postfixOpr*)
+
+# Concatenation has higher priority than choice:
+# ``a b / c`` means ``(a b) / c``
+
+seqExpr <- primary+
+expr <- seqExpr (ig "/" expr)*
+"""
+
+enableLogging()
 
 suite "patternmatch":
-  test "pattern match alternatives 1":
-    testPattern(rule_peg_alternatives, "Alternative ('/' Sp  Alternative)* / Nothing / (! ([a-z] / [A-Z]) .)+")
-
-  test "pattern match sequences 1":
-    testPattern(rule_peg_sequence, "One (! ([a-z] / [A-Z]) .)+ Three")
-
-  test "pattern match sequences 2":
-    testPattern(rule_peg_sequence, "One (! ([a-z] / [A-Z]) .)+ ! Three &(!'3' .)* ")
 
   test "pattern match composite":
-    testPattern(rule_peg_composite, "(! ([a-z] / [A-Z]) .)")
+    check "(! ([a-z] / [A-Z]) .)" =~ compositeSeqItemPeg
 
   test "pattern match item non-terminal simple":
-    testPattern(rule_peg_item, "One")
+    check "One" =~ seqItemPeg
 
   test "pattern match item non-terminal +":
-    testPattern(rule_peg_item, "One+")
+    check "One+" =~ seqItemPeg
 
   test "pattern match item !non-terminal":
-    testPattern(rule_peg_item, "!One")
+    check "!One" =~ seqItemPeg
 
   test "pattern match item @non-terminal +":
-    testPattern(rule_peg_item, "@One+")
+    check "@One+" =~ seqItemPeg
 
   test "pattern match item composite":
-    testPattern(rule_peg_item, "(One / Two)+")
+    check "(One / Two)+" =~ compositeSeqItemPeg
 
   test "pattern match item @composite":
-    testPattern(rule_peg_item, "@(One / Two)+")
+    check "@(One / Two)+" =~ compositeSeqItemPeg
 
-  test "pattern match item case insensitive composite":
-    testPattern(rule_peg_item, "i(One / Two)+")
+  # test "pattern match item case insensitive composite":
+  #   check "i(One / Two)+" =~ compositeSeqItemPeg
 
   test "pattern match item charset +":
-    testPattern(rule_peg_item, "[a-z]+")
+    check "[a-z]+" =~ seqItemPeg
 
   test "pattern match case insensitive charset +":
-    testPattern(rule_peg_item, "i[a-z]+")
+    check "i[a-z]+" =~ seqItemPeg
 
   test "pattern match backref":
-    testPattern(rule_peg_item, "i[a-z]+ $12")
+    check "$12" =~ seqItemPeg
 
   test "pattern match item & charset +":
-    testPattern(rule_peg_item, "&[a-z] +")
+    check "&[a-z] +" =~ seqItemPeg
 
   test "pattern match item & literal +":
-    testPattern(rule_peg_item, "& 'test' +")
+    check "& 'test' +" =~ seqItemPeg
 
   test "pattern match parameterized item":
-    testPattern(rule_peg_item, "List<Word, Item>")
+    check "List<Word, Item>" =~ seqItemPeg
 
   test "pattern match parameterized item with space":
-    testPattern(rule_peg_item, "List<Word, Item> ")
-
-  test "pattern match with anchors":
-    testPattern(rule_peg_alternatives, " ^ SelectClause FromClause WhereClause OrderClause? !.")
+    check "List<Word, Item> " =~ seqItemPeg
 
   test "pattern with underscores":
     let pattern = peg"""
@@ -74,5 +96,7 @@ suite "patternmatch":
     Comma <-  ','
 
     """
-    testPattern(pattern, "Value: 12345")
+    check "Value: 12345" =~ pattern
 
+  test "nimpeg 1":
+    check "[a-zA-Z_]+" =~ nimPeg

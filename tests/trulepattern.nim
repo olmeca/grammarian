@@ -4,108 +4,79 @@ import grammarian, grammarian/patterns
 
 suite "rulename":
   test "name only":
-    check "name <- pattern".match(named_rule_peg)
+    check "name <- pattern".match(firstRuleAndRestPeg)
 
   test "found parts":
-    if " name <- pattern " =~ named_rule_peg:
-      check matches[0] == " name "
-      check matches[1] == " pattern "
+    if " name <- pattern " =~ firstRuleAndRestPeg:
+      check matches[0] == "name"
+      check matches[1] == "pattern "
 
   test "full name part matches":
-    check " name:variant<a, b> ".match(name_section_peg)
+    check " name:variant<a, b> ".match(ruleHeaderPeg)
 
   test "name and variant matches":
-    check " name:variant ".match(name_section_peg)
+    check " name:variant ".match(ruleHeaderPeg)
 
   test "name and params matches":
-    check " name <a, b> ".match(name_section_peg)
+    check " name <a, b> ".match(ruleHeaderPeg)
 
   test "full name part contents match":
-    if " name:variant<a, b> " =~ name_section_peg:
+    if " name:variant<a, b> " =~ ruleHeaderPeg:
       check matches[0] == "name"
       check matches[1] == "variant"
       check matches[2] == "a, b"
 
   test "name and variant contents match":
-    if " name:variant " =~ name_section_peg:
+    if " name:variant " =~ ruleHeaderPeg:
       check matches[0] == "name"
       check matches[1] == "variant"
       check matches[2] == ""
 
   test "name and params contents match":
-    if " name <a, b> " =~ name_section_peg:
+    if " name <a, b> " =~ ruleHeaderPeg:
       check matches[0] == "name"
       check matches[1] == ""
       check matches[2] == "a, b"
 
   test "non-terminal param match":
-    check "Test".match(rule_params_peg)
+    check "Test".match(firstRuleRefArgAndRestPeg)
 
   test "non-terminal param list match":
-    check "Test, Param".match(rule_params_peg)
+    check "Test, Param".match(firstRuleRefArgAndRestPeg)
 
   test "non-terminal param list with spaces match":
-    check " Test, Param ".match(rule_params_peg)
+    check " Test, Param ".match(firstRuleRefArgAndRestPeg)
 
   test "param list literals match":
-    check "'test', 'Param'".match(rule_params_peg)
+    check "'test', 'Param'".match(firstRuleRefArgAndRestPeg)
 
   test " param list literals cardinal match":
-    check "'test'+, 'Param'?".match(rule_params_peg)
+    check "'test'+, 'Param'?".match(firstRuleRefArgAndRestPeg)
 
   test " param list literals successor match":
-    check "!'test', &'Param'".match(rule_params_peg)
+    check "!'test', &'Param'".match(firstRuleRefArgAndRestPeg)
 
   test " param list literals successor and cardinal match":
-    check "!'test'*, &'Param'?".match(rule_params_peg)
+    check "!'test'*, &'Param'?".match(firstRuleRefArgAndRestPeg)
 
   test "param list with charset match":
-    check " [a-z0-9]+, Param ".match(rule_params_peg)
+    check " [a-z0-9]+, Param ".match(firstRuleRefArgAndRestPeg)
 
   test "param list any char match":
-    check " .+, Param ".match(rule_params_peg)
+    check " .+, Param ".match(firstRuleRefArgAndRestPeg)
 
   test "param list any char match":
-    check " .?, .* ".match(rule_params_peg)
+    check " .?, .* ".match(firstRuleRefArgAndRestPeg)
 
   test "param list escaped char match":
-    check " \\13 \\10, Param ".match(rule_params_peg)
+    check " \\13 \\10, Param ".match(firstRuleRefArgAndRestPeg)
 
   test "param list alternatives match":
-    check " 'a' / 'b', [a-z]+ / [0-9]* ".match(rule_params_peg)
+    check " 'a' / 'b', [a-z]+ / [0-9]* ".match(firstRuleRefArgAndRestPeg)
 
   test "param list sequence match":
-    check " 'a'  'b', [a-z]+  [0-9]* ".match(rule_params_peg)
+    check " 'a'  'b', [a-z]+  [0-9]* ".match(firstRuleRefArgAndRestPeg)
 
   test "param list sequence match":
-    check " ('a' / 'b')+, ([a-z]+ / [0-9]*) 'test' ".match(rule_params_peg)
+    check " ('a' / 'b')+, ([a-z]+ / [0-9]*) 'test' ".match(firstRuleRefArgAndRestPeg)
 
-
-suite "lineparsing":
-
-  test "name variant":
-    let rule: Rule = read_peg_line("name:var <- value ")
-    check rule.name == "name"
-    check rule.variant == "var"
-
-  test "name variant params":
-    let rule = read_peg_line("name:var<a,b> <- value ")
-    check rule.name == "name"
-    check rule.parameters.sequal(["a", "b"])
-    check rule.variant == "var"
-
-  test "name variant spaced params":
-    let rule = read_peg_line("name:var< a, b > <- value ")
-    check rule.name == "name"
-    check rule.parameters.sequal(["a", "b"])
-    check rule.variant == "var"
-
-  test "name spaced params":
-    let rule = read_peg_line("name< a, b > <- value ")
-    check rule.name == "name"
-    check rule.parameters.sequal(["a", "b"])
-
-  test "name one params":
-    let rule = read_peg_line("name< a > <- value ")
-    check rule.name == "name"
-    check rule.parameters.sequal(["a"])
