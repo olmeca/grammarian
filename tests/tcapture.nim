@@ -4,11 +4,14 @@ import grammarian, grammarian/common, grammarian/patterns
 
 proc mark4capture(pattern: string, targets: seq[string]): string =
   let rule = newRule("Dummy", pattern)
+  let grammar = newGrammar()
+  addRule(grammar, rule)
   let ruleRes = applier(rule, @[])
   var ruleRefs: seq[RuleRef] = @[]
   var buf = newStringStream()
   let targetRefs = targets.map(t => newRuleRef(t))
-  resolvePatternSpec(ruleRes, targetRefs, ruleRefs, buf)
+  let spec = SubGrammarSpec(grammar: grammar, variant: "", captures: targetRefs)
+  resolveRuleRes(spec, ruleRes, ruleRefs, buf)
   setPosition(buf, 0)
   result = readAll(buf).strip
 

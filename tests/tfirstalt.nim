@@ -155,7 +155,6 @@ suite "Alternatives split tests":
     else:
       echo("Failed match!")
 
-
   test "alts 16: `List<a,b> / d`":
     let isMatch = "List<a,b> / d" =~ firstAltAndRestPeg
     check isMatch
@@ -164,7 +163,6 @@ suite "Alternatives split tests":
       check matches[1] == "d"
     else:
       echo("Failed match!")
-
 
   test "alts 17: `List<a,b/c> / d`":
     let isMatch = "List<a,b/c> / d" =~ firstAltAndRestPeg
@@ -216,6 +214,105 @@ suite "Alternatives split tests":
     check isMatch
     if isMatch:
       check matches[0] == "List<(a / b) c>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 22: `List<a, c> / d`":
+    let isMatch = "List<a, c> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List<a, c>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 23: `List<(a / b) c, 'e'> / d`":
+    let isMatch = "List<(a / b) c, 'e'> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List<(a / b) c, 'e'>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 24: `List<(a / b) c, 'e<f'> / d`":
+    let isMatch = "List<(a / b) c, 'e<f'> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List<(a / b) c, 'e<f'>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 25: `List<(a / b) c, 'e>f'> / d`":
+    let isMatch = "List<(a / b) c, 'e>f'> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List<(a / b) c, 'e>f'>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 26: `List<a, b<c>> / d`":
+    let isMatch = "List<a, b<c>> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List<a, b<c>>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 27: `List< a,b> / d`":
+    let isMatch = "List< a,b> / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List< a,b>"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 28: `List< a,b > / d`":
+    let isMatch = "List< a,b > / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "List< a,b >"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 29: `(e List< a,b > ) / d`":
+    let isMatch = "(e List< a,b > ) / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "(e List< a,b > )"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 30: `(e List< a, b / c > ) / d`":
+    let isMatch = "(e List< a, b / c > ) / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "(e List< a, b / c > )"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 31: `(e List< a, (b / c) e > ) / d`":
+    let isMatch = "(e List< a, (b / c) e > ) / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "(e List< a, (b / c) e > )"
+      check matches[1] == "d"
+    else:
+      echo("Failed match!")
+
+  test "alts 32: `(e List< a, (b< x > / c) e > ) / d`":
+    let isMatch = "(e List< a, (b< x > / c) e > ) / d" =~ firstAltAndRestPeg
+    check isMatch
+    if isMatch:
+      check matches[0] == "(e List< a, (b< x > / c) e > )"
       check matches[1] == "d"
     else:
       echo("Failed match!")

@@ -190,14 +190,14 @@ alttoprangeend <- ig (squote / dquote / paropen / abopen / altsep / end)
 sub <- squoted / dquoted / parenthesized / anglebracketed
 squoted <- ig squote @ squote
 dquoted <- ig dquote @ dquote
-parenthesized <- ig paropen parcontent parclose
+parenthesized <- ig paropen parcontent ig parclose
 parcontent <- partoprange (sub partoprange)*
 partoprange <- (!partoprangeend .)*
 partoprangeend <- ig (squote / dquote / abopen / paropen / parclose / end)
 altsep <- '/'
 ig <- (\s / comment)* # things to ignore
 comment <- '#' @ eol
-anglebracketed <- abopen abcontent abclose
+anglebracketed <- abopen abcontent ig abclose
 abcontent <- abtoprange (sub abtoprange)*
 abtoprange <- (!abtoprangeend .)*
 abtoprangeend <- ig (squote / dquote / abopen / paropen / abclose / end)
