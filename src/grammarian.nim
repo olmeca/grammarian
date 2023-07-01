@@ -119,6 +119,7 @@ proc resolveChoice( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: string,
                     ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream)
 proc parseRuleRef*(ruleref: string): RuleRef
 
+
 proc nominate(pattern: string): string =
   # Creates an identifying name for the given pattern
   # if it is not already a valid name (non-terminal)
@@ -212,6 +213,7 @@ proc parseRuleRef*(ruleref: string): RuleRef =
 func sequal*[T](s1: openArray[T], s2: openArray[T]): bool =
   s1.len == s2.len and (s1.len == 0 or zip(s1, s2).all(x => x[0] == x[1]))
 
+
 func eqRuleRef(r1: RuleRef, r2: RuleRef): bool =
   r1.name == r2.name and sequal(r1.args, r2.args)
 
@@ -233,6 +235,7 @@ proc resolveParameter*( spec: SubGrammarSpec, ruleRes: RuleRes, param: string,
   let parindex = find(ruleRes.rule.parameters, param)
   debug("resolveParameter: '$#', index: $#" % [param, intToStr(parindex)])
   if parindex < 0:
+    # param is not a rule parameter name
     param
   elif ruleRes.args[parindex] =~ name_pattern:
     # TODO: Here we have too process the arg as a pattern spec
@@ -245,11 +248,14 @@ proc resolveParameter*( spec: SubGrammarSpec, ruleRes: RuleRes, param: string,
 proc refersTo(ruleRef: RuleRef, ruleRes: RuleRes): bool =
   ruleRef.name == ruleRes.rule.name
 
+
 proc recurses(ruleRef: RuleRef, ruleRes: RuleRes): bool =
   ruleRef.refersTo(ruleRes) and sequal(ruleRef.args, ruleRes.rule.parameters)
 
+
 proc shouldCapture(spec: SubGrammarSpec, ruleRef: RuleRef): bool =
   spec.captures.filter(r => serialize(r) == serialize(ruleRef)).len > 0
+
 
 proc resolveRuleRef*( spec: SubGrammarSpec, ruleRes: RuleRes, ruleRef: RuleRef,
                       ruleRefAcc: var seq[RuleRef]): RuleRef =
@@ -417,7 +423,6 @@ proc getRuleRes*(grammar: Grammar, ruleRef: RuleRef, variant: string = ""): Rule
   applier(getRule(grammar, ruleRef.name, variant, ruleRef.args), ruleRef.args)
 
 
-
 proc hasRule*(grammar: Grammar, rule: Rule): bool =
   try:
     discard getRule(grammar, rule.name, rule.variant, rule.parameters)
@@ -471,8 +476,10 @@ proc resolveRule(spec: SubGrammarSpec, ruleRes: RuleRes): ResolvedRule =
     patSpecBuf.setPosition(0)
     ResolvedRule(rule: newRule(ruleRes.name, patSpecBuf.readAll()), subs: subRuleRefsAcc)
 
+
 proc getRuleRes(spec: SubGrammarSpec, ruleRef: RuleRef): RuleRes =
   getRuleRes(spec.grammar, ruleRef, spec.variant)
+
 
 proc copySubGrammar(spec: SubGrammarSpec, destGrammar: Grammar, ruleRef: RuleRef) =
   let ruleRes = spec.grammar.getRuleRes(ruleRef, spec.variant)
@@ -499,6 +506,7 @@ proc getSubGrammar(srcGrammar: Grammar, ruleRef: RuleRef, variant: string, targe
 proc getSubGrammar(srcGrammar: Grammar, ruleName: string = cDefaultRoot,
                     args: seq[string] = @[], variant: string = "", targets: seq[string]): Grammar =
   getSubGrammar(srcGrammar, newRuleRef(ruleName, args), variant, targets)
+
 
 proc toString(grammar: Grammar): string =
   var buffer: Stream = newStringStream()
