@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.2.3"
+version       = "0.2.4"
 author        = "Rudi Angela"
 description   = "A facility for storing PEG patterns such that common phrases are not duplicated among patterns."
 license       = "MIT"
