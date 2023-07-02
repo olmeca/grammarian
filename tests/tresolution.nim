@@ -1,4 +1,4 @@
-import unittest, pegs, streams, strutils, logging
+import unittest, pegs, streams, strutils, sequtils, logging
 import grammarian, grammarian/patterns, grammarian/common
 
 
@@ -21,7 +21,7 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[])
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
-    check buf.readAll().strip == "Word Sep List_Word / Word"
+    check buf.readAll().strip == "(Word ) Sep List_Word / (Word )"
 
 
   test "resolve non-literal part with one param and one capture":
@@ -34,7 +34,7 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
-    check buf.readAll().strip == "Word {Sep} List_Word / Word"
+    check buf.readAll().strip == "(Word ) {Sep} List_Word / (Word )"
 
 
   test "resolve non-literal part with one param and one param capture":
@@ -47,7 +47,7 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
-    check buf.readAll().strip == "{Word} Sep List_Word / {Word}"
+    check buf.readAll().strip == "({Word} ) Sep List_Word / ({Word} )"
 
   test "resolve non-literal part with one param and one parameterized rule capture":
     let ruleRef = newRuleRef("List", @["Word"])
@@ -60,7 +60,7 @@ suite "patternresolution":
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
     let value = buf.readAll().strip
-    check value == "Word Sep {List_Word} / Word"
+    check value == "(Word ) Sep {List_Word} / (Word )"
 
 
   test "resolve non-literal part with 2 params":
@@ -73,7 +73,7 @@ suite "patternresolution":
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
     let value = buf.readAll().strip
-    check value == "Word Space List_Word_Space / Word"
+    check value == "(Word ) (Space ) List_Word_Space / (Word )"
 
   test "resolve rule with one literal arg":
     let ruleRef = newRuleRef("List", @["[a-z]+"])
@@ -105,8 +105,8 @@ suite "recursive":
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
     let resolved = buf.readAll().strip
-    echo "Resolved: `$#`" % resolved
-    check resolved =~ peg"'(Spaced<Word>) Sep List_p' [0-9]+ ' / (Spaced<Word>)'"
+    check resolved =~ peg"'(Spaced_Word ) Sep List_p' [0-9]+ ' / (Spaced_Word )'"
+    check subs.filterIt(it.name == "Spaced" and sequal(it.args, @["Word"])).len() > 0
 
 proc newRule(params: seq[string] = @[]): Rule =
   newRule("TestRule", "just a test", "", params)

@@ -350,11 +350,28 @@ proc resolveChoice( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: string,
     alt = altStream.next()
 
 
-# proc resolvePatternSpec*(ruleRes: RuleRes, patSpec: string, targets: seq[RuleRef], ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream) =
-#   resolveChoice(ruleRes, patSpec, targets, ruleRefAcc, patAccBuf)
+proc resolvePattern*( spec: SubGrammarSpec, ruleRes: RuleRes, pattern: string,
+                      ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream) =
+  resolveChoice(spec, ruleRes, pattern, ruleRefAcc, patAccBuf)
+
+
+proc resolvePattern*( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: string,
+                      ruleRefAcc: var seq[RuleRef]): string =
+  var buffer: StringStream = newStringStream()
+  resolvePattern(spec, ruleRes, patSpec, ruleRefAcc, buffer)
+  buffer.setPosition(0)
+  buffer.readAll()
+
+
+proc resolvePatterns*( spec: SubGrammarSpec, ruleRes: RuleRes, patterns: seq[string],
+                      ruleRefAcc: var seq[RuleRef]): seq[string] =
+  result = @[]
+  for pattern in patterns:
+    result.add(resolvePattern(spec, ruleRes, pattern, ruleRefAcc))
 
 
 proc resolveRuleRes*(spec: SubGrammarSpec, ruleRes: RuleRes, ruleRefAcc: var seq[RuleRef], patAccBuf: StringStream) =
+  ruleRes.args = resolvePatterns(spec, ruleRes, ruleRes.args, ruleRefAcc)
   resolveChoice(spec, ruleRes, ruleRes.rule.pattern, ruleRefAcc, patAccBuf)
 
 
