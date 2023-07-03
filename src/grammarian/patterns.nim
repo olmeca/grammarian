@@ -78,7 +78,14 @@ literal <- ig identifier? '$' [0-9]+ / '$' / '^' /
            ig '_'
 ruleref <- identifier args? !(\s* "<-")
 # Currently no nesting of params supported
-args <- '<' @ '>'
+args <- abopen spc abcontent abclose
+abcontent <- abrange (subargs abrange)*
+abrange <- (!abrangeend .)*
+subargs <- abopen spc abcontent abclose
+abrangeend <- abopen / abclose
+spc <- (\s)* # things to ignore
+abopen <- spc '<' !'-'
+abclose <- spc '>'
 identifier <- [A-Za-z][A-Za-z0-9_]*
 charset <- "[" "^"? (charsetchar ("-" charsetchar)?)+ "]"
 charsetchar <- "\\" . / [^\]]
@@ -102,8 +109,8 @@ let seqItemPeg* = peg"""
 primary <- {prefixOpr} ig {literal} ig {postfixOpr} ig
 prefixOpr <- ig '&' / ig '!' / ig '@' / ig '{@}' / ig '@@' / ''
 postfixOpr <- '?' / ig '*' / ig '+' / ''
-literal <-  identifier? '$' [0-9]+ / '$' / '^' /
-            ruleref /
+literal <-  ruleref /
+            identifier? '$' [0-9]+ / '$' / '^' /
             charset /
             stringlit /
             builtin /

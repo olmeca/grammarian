@@ -30,7 +30,7 @@ suite "patternresolution":
     let grammar = newGrammar()
     addRule(grammar, rule)
     let resolver = applier(rule, ruleRef)
-    let capture = parseRuleRef("Sep")
+    let capture = newRuleRef("Sep")
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
@@ -43,7 +43,7 @@ suite "patternresolution":
     let grammar = newGrammar()
     addRule(grammar, rule)
     let resolver = applier(rule, ruleRef)
-    let capture = parseRuleRef("Word")
+    let capture = newRuleRef("Word")
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf)
     setPosition(buf, 0)
@@ -107,6 +107,18 @@ suite "recursive":
     let resolved = buf.readAll().strip
     check resolved =~ peg"'(Spaced_Word ) Sep List_p' [0-9]+ ' / (Spaced_Word )'"
     check subs.filterIt(it.name == "Spaced" and sequal(it.args, @["Word"])).len() > 0
+
+  test "cascadedruleref":
+    let grammarSpec = """
+    pat <- 'val: ' list< a,s<z> > '.'
+    list<i,j> <- i j list<i,j> / i
+    s<x> <- '[' x ']'
+    a <- 'A'
+    z <- 'Z'
+    """
+    let grammar = newGrammar(grammarSpec)
+    let pegSpec = pegString(grammar, "pat")
+    echo pegSpec
 
 proc newRule(params: seq[string] = @[]): Rule =
   newRule("TestRule", "just a test", "", params)

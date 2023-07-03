@@ -84,6 +84,13 @@ suite "patternmatch":
   test "pattern match parameterized item with space":
     check "List<Word, Item> " =~ seqItemPeg
 
+  test "cascaded":
+    if "list< a,s<'z'> >" =~ seqItemPeg:
+      debug(foldMatches(matches))
+      check matches[0] == ""
+      check matches[1] == "list< a,s<'z'> >"
+      check matches[2] == ""
+
   test "pattern with underscores":
     let pattern = peg"""
     Pattern <-  'Value: ' {Value}
