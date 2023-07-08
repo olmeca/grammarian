@@ -19,7 +19,7 @@ suite "patternresolution":
     addRule(grammar, rule)
     let resolver = applier(rule, ruleRef)
     let spec = subSpec( grammar, @[])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     check buf.readAll().strip == "(Word ) Sep List_Word / (Word )"
 
@@ -32,7 +32,7 @@ suite "patternresolution":
     let resolver = applier(rule, ruleRef)
     let capture = newRuleRef("Sep")
     let spec = subSpec( grammar, @[capture])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     check buf.readAll().strip == "(Word ) {Sep} List_Word / (Word )"
 
@@ -45,7 +45,7 @@ suite "patternresolution":
     let resolver = applier(rule, ruleRef)
     let capture = newRuleRef("Word")
     let spec = subSpec( grammar, @[capture])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     check buf.readAll().strip == "({Word} ) Sep List_Word / ({Word} )"
 
@@ -57,7 +57,7 @@ suite "patternresolution":
     let resolver = applier(rule, ruleRef)
     let capture = newRuleRef("List", @["Word"])
     let spec = subSpec( grammar, @[capture])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let value = buf.readAll().strip
     check value == "(Word ) Sep {List_Word} / (Word )"
@@ -70,7 +70,7 @@ suite "patternresolution":
     addRule(grammar, rule)
     let resolver = applier(rule, ruleRef)
     let spec = subSpec( grammar, @[])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let value = buf.readAll().strip
     check value == "(Word ) (Space ) List_Word_Space / (Word )"
@@ -82,7 +82,7 @@ suite "patternresolution":
     addRule(grammar, rule)
     let resolver = applier(rule, ruleRef)
     let spec = subSpec( grammar, @[])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let resolved = buf.readAll().strip
     check resolved =~ peg"'([a-z]+) Sep List_p' [0-9]+ ' / ([a-z]+)'"
@@ -102,7 +102,7 @@ suite "recursive":
     addRule(grammar, spacedRule)
     let resolver = applier(listRule, ruleRef)
     let spec = subSpec( grammar, @[])
-    resolveRuleRes(spec, resolver, subs, buf)
+    resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let resolved = buf.readAll().strip
     check resolved =~ peg"'(Spaced_Word ) Sep List_p' [0-9]+ ' / (Spaced_Word )'"
@@ -110,11 +110,12 @@ suite "recursive":
 
   test "cascadedruleref":
     let grammarSpec = """
-    pat <- 'val: ' list< a,s<z> > '.'
+    pat <- 'val: ' list< a,s<z> > 'end'
     list<i,j> <- i j list<i,j> / i
     s<x> <- '[' x ']'
     a <- 'A'
     z <- 'Z'
+    x <- 'X'
     """
     let grammar = newGrammar(grammarSpec)
     let pegSpec = pegString(grammar, "pat")
