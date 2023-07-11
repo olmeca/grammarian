@@ -92,6 +92,8 @@ type
   Primary* = ref PrimaryObj
   PrimaryObj* = object of RootObj
     kind*: PrimaryKind
+    spec*: string
+    ruleRef*: RuleRef
 
 
   PatternExtractor* = ref object of RootObj
@@ -122,16 +124,22 @@ proc resolveChoice( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: string,
 proc extractSubGrammar(spec: SubGrammarSpec, ruleRef: RuleRef, depth: int)
 
 proc indentLog(depth: int, value: string) =
-  debug(repeat(' ', depth*2), value)
+  debug(repeat(' ', depth*3), value)
 
 proc nominate(pattern: string): string =
   # Creates an identifying name for the given pattern
   # if it is not already a valid name (non-terminal)
+  echo("nominate: '$#'" % pattern)
   if pattern =~ name_pattern:
     pattern
   else:
     "p$#" % intToStr(hash(pattern))
 
+proc dQuote(value: string): string = "`$#`" % value
+
+proc lutmap(value: string, lut: seq[string]): string =
+  let foundIndex = find(lut, value)
+  if foundIndex >= 0: lut[foundIndex] else: value
 
 proc fuse(name: string, args: seq[string] = @[]): string =
   let fusedParams = args.map(x => "_$#" % x).join("")
@@ -152,9 +160,16 @@ proc serialize*(ruleref: RuleRef, capture: bool = false, successorPrefix = "", c
     result = captured(result)
   else: discard
 
+proc serialize*(primary: Primary): string =
+  if primary.kind == Nominal:
+    result = serialize(primary.ruleRef)
+    debug("serialize primary: ruleRef: $# -> `$#`" % [$(primary.ruleRef), result])
+  else:
+    result = primary.spec
+    debug("serialize primary: literal `$#` -> '$#'" % [primary.spec, result])
 
 proc `$`*(ruleParams: seq[string]): string =
-  if len(ruleParams) > 0: "<$#>" % join(ruleParams.map(p => "$#" % p), ", ") else: ""
+  if len(ruleParams) > 0: "[$#]" % ruleParams.map(p => dQuote(p)).join(", ") else: ""
 
 
 proc `$`*(ruleRef: RuleRef, capture: bool = false): string =
@@ -168,12 +183,22 @@ proc `$`*(ruleRef: RuleRef, capture: bool = false): string =
 proc `$`*(rule: Rule): string =
   let paramStr = $(rule.parameters)
   let variantStr = if rule.variant.notEmpty(): ":" & rule.variant else: ""
-  "`$#$#$# <- $#`" % [rule.name, variantStr, paramStr, rule.pattern]
+  "`$#$#`$# <- $#" % [rule.name, variantStr, paramStr, rule.pattern]
 
 
 proc `$`*(ruleRes: RuleRes): string =
-  "($#) -> $# ($#): `$#`" % [join(ruleRes.args, ", "), ruleRes.rule.name, join(ruleRes.rule.parameters, ", "), ruleRes.rule.pattern]
+  let args = ruleRes.args.map(a => dQuote(a)).join(", ")
+  let params = $(ruleRes.rule.parameters)
+  "$# -> $# $#: `$#`" % [$(ruleRes.args), ruleRes.rule.name, params, ruleRes.rule.pattern]
 
+proc `$`*(primary: Primary): string =
+  if primary.kind == Nominal:
+    $(primary.ruleRef)
+  else:
+    dQuote(primary.spec)
+
+proc `$`(resolved: ResolvedRule): string =
+  "rule: [$#], subs: [$#]" % [$(resolved.rule), resolved.subs.map(s => $(s)).join(", ")]
 
 proc newRule*(name: string, pattern: string, variant = "", params: seq[string] = @[]): Rule =
   Rule(name: name, variant: variant, parameters: params, pattern: pattern)
@@ -182,41 +207,21 @@ proc newRule*(name: string, pattern: string, variant = "", params: seq[string] =
 proc newRuleRef*(name: string, params: seq[string] = @[]): RuleRef =
   RuleRef(name: name, args: params)
 
+proc isNominal(primary: Primary): bool = primary.kind == Nominal
 
-proc parseRuleRefArgs(spec: SubGrammarSpec, ruleRes: RuleRes, source: string,
-                      ruleRefAcc: var seq[RuleRef], depth: int): seq[string] =
-  result = @[]
-  var argStream = newStream(firstRuleRefArgAndRestPeg, source)
-  var arg = argStream.next()
-  while arg.notEmpty():
-    indentLog(depth, "parseRuleRefArgs: rres: $#, arg: `$#`" % [ruleRes, arg])
-    try:
-      let subRuleRef = parseRuleRef(spec, ruleRes, arg, ruleRefAcc, depth)
-      indentLog(depth, "parseRuleRefArgs: Found subruleref argument: `$#` (ser: `$#`)" % [$(subRuleRef), serialize(subRuleRef)])
-      extractSubGrammar(spec, subRuleRef, depth+1)
-      result.add(serialize(subRuleRef))
-    except NonTerminalNameError:
-      result.add(arg)
-    arg = argStream.next()
-
-
-proc isNonTerminal(ruleRef: RuleRef): bool =
-  ruleRef.name.match(name_pattern)
-
-
-proc parseRuleRef*( spec: SubGrammarSpec, ruleRes: RuleRes, source: string,
-                    ruleRefAcc: var seq[RuleRef], depth: int): RuleRef =
-  indentLog(depth, "> parseRuleRef: `$#`" % source)
-  if source =~ ruleRefPeg:
-    indentLog(depth, "  parseRuleRef - RuleRef parts found: `$#`" % foldMatches(matches))
-    let ruleName = matches[0]
-    let ruleParams = if matches[1] == "": @[] else: parseRuleRefArgs(spec, ruleRes, matches[1], ruleRefAcc, depth+1)
-    result = RuleRef(name: ruleName, args: ruleParams)
-    indentLog(depth, "< parseRuleRef -> `$#`" % $(result))
+proc asUnit(pattern: string): string =
+  if pattern =~ name_pattern:
+    pattern
+  elif pattern =~ group_pattern:
+    pattern
   else:
-    indentLog(depth, "< parseRuleRef: no match for `$#`" % source)
-    raise newException(NonTerminalNameError, source)
+    "($#)" % pattern
 
+proc newPrimary(value: string): Primary =
+  Primary(kind: Literal, spec: value)
+
+proc newPrimary(value: RuleRef): Primary =
+  Primary(kind: Nominal, ruleRef: value)
 
 func sequal*[T](s1: openArray[T], s2: openArray[T]): bool =
   s1.len == s2.len and (s1.len == 0 or zip(s1, s2).all(x => x[0] == x[1]))
@@ -224,6 +229,26 @@ func sequal*[T](s1: openArray[T], s2: openArray[T]): bool =
 
 func eqRuleRef(r1: RuleRef, r2: RuleRef): bool =
   r1.name == r2.name and sequal(r1.args, r2.args)
+
+
+proc refersTo(ruleRef: RuleRef, ruleRes: RuleRes): bool =
+  ruleRef.name == ruleRes.rule.name
+
+
+proc refersToParam(ruleRef: RuleRef, ruleRes: RuleRes): bool =
+  ruleRef.args.len == 0 and find(ruleRes.rule.parameters, ruleRef.name) >= 0
+
+proc recurses(ruleRef: RuleRef, ruleRes: RuleRes): bool =
+  ruleRef.refersTo(ruleRes) and sequal(ruleRef.args, ruleRes.rule.parameters)
+
+
+proc hasResolvedRule(grammar: Grammar, ruleRef: RuleRef): bool =
+  let ruleName = ruleRef.serialize()
+  grammar.rules.filter(r => r.name == ruleName).len() > 0
+
+
+proc shouldCapture(spec: SubGrammarSpec, ruleRef: RuleRef): bool =
+  spec.captures.filter(r => serialize(r) == serialize(ruleRef)).len > 0
 
 
 func applier*(rule: Rule, args: seq[string], parent: RuleRes = nil): RuleRes =
@@ -238,31 +263,66 @@ func isSelfRef(ruleRef: RuleRef, rule: Rule): bool =
   ruleRef.name == rule.name and sequal(ruleRef.args, rule.parameters)
 
 
+proc isNonTerminal(ruleRef: RuleRef): bool =
+  ruleRef.name.match(name_pattern)
+
+
+proc parseRuleRefArgs(spec: SubGrammarSpec, ruleRes: RuleRes, source: string,
+                      ruleRefAcc: var seq[RuleRef], depth: int): seq[Primary] =
+  result = @[]
+  var argStream = newStream(firstRuleRefArgAndRestPeg, source)
+  var theArg = argStream.next()
+  while theArg.notEmpty():
+    indentLog(depth, "parseRuleRefArgs - arg: `$#`" % theArg)
+    var primary: Primary
+    try:
+      let subRuleRef = parseRuleRef(spec, ruleRes, theArg, ruleRefAcc, depth)
+      indentLog(depth, "parseRuleRefArgs: Found subruleref argument: $# (ser: `$#`)" % [$(subRuleRef), serialize(subRuleRef)])
+      if subRuleRef.args.len() == 0:
+        # handle possible ruleres param ref
+        let argIndex = find(ruleRes.rule.parameters, subRuleRef.name)
+        if argIndex >= 0:
+          # Replace param ref by corresponding argument
+          indentLog(depth, "parseRuleRefArgs: replacing param '$#' by arg '$#'" % [subRuleRef.name, ruleRes.args[argIndex]])
+          primary = newPrimary(ruleRes.args[argIndex])
+        else:
+          primary = newPrimary(subRuleRef)
+      else:
+        primary = newPrimary(subRuleRef)
+    except NonTerminalNameError:
+      primary = newPrimary(theArg)
+    indentLog(depth, "parseRuleRefArgs: adding primary $#" % $(primary))
+    result.add(primary)
+    theArg = argStream.next()
+
+
+proc parseRuleRef*( spec: SubGrammarSpec, ruleRes: RuleRes, source: string,
+                    ruleRefAcc: var seq[RuleRef], depth: int): RuleRef =
+  indentLog(depth, "parseRuleRef: rres $#, `$#`" % [$(ruleRes), source])
+  if source =~ ruleRefPeg:
+    indentLog(depth, "parseRuleRef - RuleRef parts found: `$#`" % foldMatches(matches))
+    let ruleName = matches[0]
+    let ruleParamPrimaries = if matches[1] == "": @[] else: parseRuleRefArgs(spec, ruleRes, matches[1], ruleRefAcc, depth+1)
+    # iterate primaries: any Nominal with subruleref with args: parseRuleRefArgs(it)
+    let ruleRefArgs = ruleParamPrimaries.map(p => serialize(p))
+    result = RuleRef(name: ruleName, args: ruleRefArgs)
+    for subRuleRef in ruleParamPrimaries.filter(isNominal).map(p => p.ruleRef):
+      if not subRuleRef.refersToParam(ruleRes):
+        indentLog(depth, "parseRuleRef - Collecting subruleRef $#" % $(subRuleRef))
+        ruleRefAcc.add(subRuleRef)
+    indentLog(depth, "parseRuleRef -> `$#`" % $(result))
+  else:
+    indentLog(depth, "parseRuleRef: no match for `$#`" % source)
+    raise newException(NonTerminalNameError, source)
+
+
 proc resolveParameter*( spec: SubGrammarSpec, ruleRes: RuleRes, param: string,
                         ruleRefAcc: var seq[RuleRef], doNominate: bool = false, depth: int): string =
   let parindex = find(ruleRes.rule.parameters, param)
-  indentLog(depth, "resolveParameter: '$#', index: $#" % [param, intToStr(parindex)])
-  if parindex < 0:
-    # param is not a rule parameter name
-    param
-  elif ruleRes.args[parindex] =~ name_pattern:
-    # TODO: Here we have to process the arg as a pattern spec
-    ruleRes.args[parindex]
-  else:
-    # Terminal expressions must be parenthesized (i.e. macro substitution)
-    "($#)" % ruleRes.args[parindex]
-
-
-proc refersTo(ruleRef: RuleRef, ruleRes: RuleRes): bool =
-  ruleRef.name == ruleRes.rule.name
-
-
-proc recurses(ruleRef: RuleRef, ruleRes: RuleRes): bool =
-  ruleRef.refersTo(ruleRes) and sequal(ruleRef.args, ruleRes.rule.parameters)
-
-
-proc shouldCapture(spec: SubGrammarSpec, ruleRef: RuleRef): bool =
-  spec.captures.filter(r => serialize(r) == serialize(ruleRef)).len > 0
+  let resolved = if parindex < 0: param else: ruleRes.args[parindex]
+  indentLog(depth, "resolveParameter: '$#', index: $# = '$#'" % [param, intToStr(parindex), resolved])
+  # TODO: Here we have to process the arg as a pattern spec
+  resolved.asUnit()
 
 
 proc resolveRuleRef*( spec: SubGrammarSpec, ruleRes: RuleRes, ruleRef: RuleRef,
@@ -282,15 +342,15 @@ proc resolveRuleRef*( spec: SubGrammarSpec, ruleRes: RuleRes, ruleRef: RuleRef,
     #   # This is another recursive call to this rule (with args differing from rule params)
     #   theRuleRef = ruleRef
   elif ruleRef.args.len == 0:
-    indentLog(depth, "resolveRuleRef: ruleref no args")
+    indentLog(depth, "resolveRuleRef: ruleref `$#` no args" % ruleRef.name)
     # just replace the name if it is a rule parameter name
     theRuleRef = newRuleRef(resolveParameter(spec, ruleRes, ruleRef.name, ruleRefAcc, false, depth+1))
   else:
     indentLog(depth, "resolveRuleRef: ruleref with args")
     # Can we not get the args from the ruleres?
     var resolvedParams: seq[string] = @[]
-    for param in ruleRef.args:
-      resolvedParams.add(resolveParameter(spec, ruleRes, param, ruleRefAcc, false, depth+1))
+    for theArg in ruleRef.args:
+      resolvedParams.add(resolveParameter(spec, ruleRes, theArg, ruleRefAcc, false, depth+1))
     theRuleRef = newRuleRef(ruleRef.name, resolvedParams)
   indentLog(depth, "resolveRuleRef -> `$#`" % $(theRuleRef))
   result = theRuleRef
@@ -315,15 +375,17 @@ proc resolveSequenceItem( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: strin
     let cardinalityIndicator = matches[2]
     try:
       let ruleRef: RuleRef = parseRuleRef(spec, ruleRes, primary, ruleRefAcc, depth+1)
+      indentLog(depth, "resolveSequenceItem: parsed ruleref: " & $(ruleRef))
       let resolvedRuleRef = resolveRuleRef(spec, ruleRes, ruleRef, ruleRefAcc, depth+1)
+      indentLog(depth, "resolveSequenceItem: resolved ruleref: '$#'" % $(resolvedRuleRef))
       let captured = shouldCapture(spec, resolvedRuleRef)
       patAccBuf.write(serialize(resolvedRuleRef, captured, successorPrefix, cardinalityIndicator) & ' ')
       # Only add if it is not a recursive rule ref
-      if isNonTerminal(resolvedRuleRef) and not ruleRef.recurses(ruleRes):
+      if isNonTerminal(resolvedRuleRef) and not ruleRef.recurses(ruleRes) and not ruleRef.refersToParam(ruleRes):
         # Only add if not already containing item with same resolved name
         if ruleRefAcc.filter(r => r.eqRuleRef(ruleRef)).len == 0:
           indentLog(depth, "resolveSequenceItem: adding ruleref: " & $(ruleRef))
-          ruleRefAcc.add(ruleRef)
+          ruleRefAcc.add(resolvedRuleRef)
         else: discard
       else: discard
     except NonTerminalNameError:
@@ -369,7 +431,7 @@ proc resolvePattern*( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: string,
   var buffer: StringStream = newStringStream()
   resolvePattern(spec, ruleRes, patSpec, ruleRefAcc, buffer, depth)
   buffer.setPosition(0)
-  buffer.readAll()
+  buffer.readAll().strip()
 
 
 proc resolvePatterns*( spec: SubGrammarSpec, ruleRes: RuleRes, patterns: seq[string],
@@ -459,6 +521,12 @@ proc hasRule*(grammar: Grammar, rule: Rule): bool =
   except NoSuchRuleError:
     result = false
 
+proc hasRule*(grammar: Grammar, ruleRef: RuleRef, variant: string): bool =
+  try:
+    discard getRule(grammar, ruleRef, 0, variant)
+    result = true
+  except NoSuchRuleError:
+    result = false
 
 proc addRule*(grammar: Grammar, rule: Rule) =
   debug("addRule: [$#]" % $(rule))
@@ -512,15 +580,17 @@ proc getRuleRes(spec: SubGrammarSpec, ruleRef: RuleRef, depth: int): RuleRes =
 
 proc extractSubGrammar(spec: SubGrammarSpec, ruleRef: RuleRef, depth: int) =
   indentLog(depth, "extractSubGrammar: ruleRef: `$#`" % $(ruleRef))
-  let ruleRes = spec.grammar.getRuleRes(ruleRef, depth+1, spec.variant)
   # Only if dest has no rule with resolved name
-  if not spec.sub.hasRuleNamed(ruleRes.name):
+  if not spec.sub.hasRuleNamed(ruleRef.name):
+    let ruleRes = spec.grammar.getRuleRes(ruleRef, depth+1, spec.variant)
     let resolvedRule = resolveRule(spec, ruleRes, depth+1)
     indentLog(depth, "extractSubGrammar: resolvedRule: $#" % $(resolvedRule))
-    spec.sub.rules.add(resolvedRule.rule)
+    spec.sub.addRule(resolvedRule.rule)
     for subRuleRef in resolvedRule.subs:
-      indentLog(depth, "extractSubGrammar: subRuleRef: [$#]" % $(subRuleRef))
-      extractSubGrammar(spec, subRuleRef, depth+1)
+      let ruleName = subRuleRef.serialize()
+      indentLog(depth, "extractSubGrammar: subRuleRef: `$#` ($#)" % [$(subRuleRef), ruleName])
+      if not spec.sub.hasResolvedRule(subRuleRef):
+        extractSubGrammar(spec, subRuleRef, depth+1)
 
 proc newSubGrammarSpec(srcGrammar: Grammar, subrammar: Grammar, variant: string, targets: seq[RuleRef]): SubGrammarSpec =
   result = SubGrammarSpec(grammar: srcGrammar, sub: subrammar, variant: variant, captures: targets)
@@ -544,22 +614,23 @@ proc toString(grammar: Grammar): string =
   result = buffer.readAll()
 
 
-proc pegString*(grammar: Grammar, ruleName: string = cDefaultRoot, extractables: seq[string] = @[],
-                variant: string = "", args: seq[string] = @[]): string  =
+proc pegString*(grammar: Grammar, ruleName: string = cDefaultRoot, args: seq[string] = @[],
+                extractables: seq[string] = @[], variant: string = ""): string  =
   let subGrammar = getSubGrammar(grammar, ruleName, args, variant, extractables)
   result = subGrammar.toString()
   debug ("pegString ->\n" & result)
 
 
-proc matcher*(grammar: Grammar, patternName: string = cDefaultRoot): Peg =
-  peg(pegString(grammar, patternName))
+proc matcher*(grammar: Grammar, patternName: string = cDefaultRoot, args: seq[string] = @[]): Peg =
+  peg(pegString(grammar, patternName, args))
 
 
 proc extractorPeg*(grammar: Grammar, parts: seq[string], patternName: string = cDefaultRoot, variant: string = ""): Peg =
-  peg(pegString(grammar, patternName, parts, variant))
+  peg(pegString(grammar, patternName, @[], parts, variant))
 
-proc extractorPeg*(grammar: Grammar, patternName: string, parts: seq[string], variant: string = ""): Peg =
-  peg(pegString(grammar, patternName, parts, variant))
+proc extractorPeg*( grammar: Grammar, patternName: string, args: seq[string] = @[],
+                    parts: seq[string] = @[], variant: string = ""): Peg =
+  peg(pegString(grammar, patternName, args, parts, variant))
 
 
 proc newPatternExtractor*(grammar: Grammar, mainPattern: string, targets: seq[string], variant: string = ""): PatternExtractor =

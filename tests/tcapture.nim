@@ -11,7 +11,7 @@ proc mark4capture(pattern: string, targets: seq[string]): string =
   var buf = newStringStream()
   let targetRefs = targets.map(t => newRuleRef(t))
   let spec = SubGrammarSpec(grammar: grammar, variant: "", captures: targetRefs)
-  resolveRuleRes(spec, ruleRes, ruleRefs, buf)
+  resolveRuleRes(spec, ruleRes, ruleRefs, buf, 0)
   setPosition(buf, 0)
   result = readAll(buf).strip
 

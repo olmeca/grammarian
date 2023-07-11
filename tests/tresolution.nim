@@ -108,18 +108,45 @@ suite "recursive":
     check resolved =~ peg"'(Spaced_Word ) Sep List_p' [0-9]+ ' / (Spaced_Word )'"
     check subs.filterIt(it.name == "Spaced" and sequal(it.args, @["Word"])).len() > 0
 
+  let grammarSpec = """
+  pat <- 'val: ' list< a,s<z> > ' end' !.
+  parpat<a,z> <- 'val: ' list< a,s<z> > ' end' !.
+  list<i,j> <- i j list<i,j> / i
+  s<x> <- '[' x ']'
+  a <- 'A'
+  z <- 'Z'
+  x <- 'X'
+  y <- 'Y'
+  """
+
   test "cascadedruleref":
-    let grammarSpec = """
-    pat <- 'val: ' list< a,s<z> > 'end'
-    list<i,j> <- i j list<i,j> / i
-    s<x> <- '[' x ']'
-    a <- 'A'
-    z <- 'Z'
-    x <- 'X'
-    """
     let grammar = newGrammar(grammarSpec)
     let pegSpec = pegString(grammar, "pat")
     echo pegSpec
+
+  test "cascadedruleref2":
+    let grammar = newGrammar(grammarSpec)
+    let spec = matcher(grammar, "pat")
+    check("val: A end" =~ spec)
+    check("val: A[Z]A end" =~ spec)
+    check("val: A[Z]A[Z]A end" =~ spec)
+
+
+  test "cascadedruleref3":
+    let grammar = newGrammar(grammarSpec)
+    let spec = matcher(grammar, "parpat", @["x", "y"])
+    check("val: X end" =~ spec)
+    check("val: X[Y]X end" =~ spec)
+    check("val: X[Y]X[Y]X end" =~ spec)
+
+
+  test "cascadedruleref4":
+    let grammar = newGrammar(grammarSpec)
+    let spec = matcher(grammar, "parpat", @["'H'", "y"])
+    check("val: H end" =~ spec)
+    check("val: H[Y]H end" =~ spec)
+    check("val: H[Y]H[Y]H end" =~ spec)
+
 
 proc newRule(params: seq[string] = @[]): Rule =
   newRule("TestRule", "just a test", "", params)

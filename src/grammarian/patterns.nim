@@ -1,38 +1,38 @@
 import pegs
 
-let nimPeg = peg"""
-grammar <- rule* / expr
-
-identifier <- [A-Za-z][A-Za-z0-9_]*
-charsetchar <- "\\" . / [^\]]
-charset <- "[" "^"? (charsetchar ("-" charsetchar)?)+ "]"
-stringlit <- identifier? ("\"" ("\\" . / [^"])* "\"" /
-                          "'" ("\\" . / [^'])* "'")
-builtin <- "\\" identifier / [^\13\10]
-
-comment <- '#' @ \n
-ig <- (\s / comment)* # things to ignore
-
-rule <- identifier \s* "<-" expr ig
-identNoArrow <- identifier !(\s* "<-")
-prefixOpr <- ig '&' / ig '!' / ig '@' / ig '{@}' / ig '@@'
-literal <- ig identifier? '$' [0-9]+ / '$' / '^' /
-           ig identNoArrow /
-           ig charset /
-           ig stringlit /
-           ig builtin /
-           ig '.' /
-           ig '_' /
-           (ig "(" expr ig ")")
-postfixOpr <- ig '?' / ig '*' / ig '+'
-primary <- prefixOpr* (literal postfixOpr*)
-
-# Concatenation has higher priority than choice:
-# ``a b / c`` means ``(a b) / c``
-
-seqExpr <- primary+
-expr <- seqExpr (ig "/" expr)*
-"""
+# let nimPeg = peg"""
+# grammar <- rule* / expr
+#
+# identifier <- [A-Za-z][A-Za-z0-9_]*
+# charsetchar <- "\\" . / [^\]]
+# charset <- "[" "^"? (charsetchar ("-" charsetchar)?)+ "]"
+# stringlit <- identifier? ("\"" ("\\" . / [^"])* "\"" /
+#                           "'" ("\\" . / [^'])* "'")
+# builtin <- "\\" identifier / [^\13\10]
+#
+# comment <- '#' @ \n
+# ig <- (\s / comment)* # things to ignore
+#
+# rule <- identifier \s* "<-" expr ig
+# identNoArrow <- identifier !(\s* "<-")
+# prefixOpr <- ig '&' / ig '!' / ig '@' / ig '{@}' / ig '@@'
+# literal <- ig identifier? '$' [0-9]+ / '$' / '^' /
+#            ig identNoArrow /
+#            ig charset /
+#            ig stringlit /
+#            ig builtin /
+#            ig '.' /
+#            ig '_' /
+#            (ig "(" expr ig ")")
+# postfixOpr <- ig '?' / ig '*' / ig '+'
+# primary <- prefixOpr* (literal postfixOpr*)
+#
+# # Concatenation has higher priority than choice:
+# # ``a b / c`` means ``(a b) / c``
+#
+# seqExpr <- primary+
+# expr <- seqExpr (ig "/" expr)*
+# """
 
 let firstRuleAndRestPeg* = peg"""
 grammar <- ^ ig {ruleheader} arrow {rulecontent} {rest} !.
@@ -257,6 +257,7 @@ Sp <- ' '*
 """
 
 let name_pattern* = peg"^ [a-z,A-Z] [a-z,A-Z0-9_]* !."
+let group_pattern* = peg "^ '(' (!')' .)+ ')' !."
 
 let rule_params_peg* = peg"""
 Params <- {Pattern} ',' Sp Params / {Pattern}
