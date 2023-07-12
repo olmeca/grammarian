@@ -25,7 +25,7 @@ proc listMatch(item: string, sep: string, source: string): string =
     else:
       raise newException(NoMatchError, "No match.")
 
-suite "plain extraction":
+suite "plainextraction":
 
   # test "list of charset and comma":
   #   check listMatch("[a-z]", "','", "a,b,c d") == "a,b,c"

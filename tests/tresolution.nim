@@ -6,7 +6,7 @@ proc subSpec(grammar: Grammar, captures: seq[RuleRef]): SubGrammarSpec =
   SubGrammarSpec(grammar: grammar, variant: "", captures: captures)
 
 
-suite "patternresolution":
+suite "nominal-param-capture":
 
   setup:
     var buf = newStringStream()
@@ -21,7 +21,7 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[])
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
-    check buf.readAll().strip == "(Word ) Sep List_Word / (Word )"
+    check buf.readAll().strip == "Word Sep List_Word / Word"
 
 
   test "resolve non-literal part with one param and one capture":
@@ -34,10 +34,10 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
-    check buf.readAll().strip == "(Word ) {Sep} List_Word / (Word )"
+    check buf.readAll().strip == "Word {Sep} List_Word / Word"
 
 
-  test "resolve non-literal part with one param and one param capture":
+  test "capture-param":
     let ruleRef = newRuleRef("List", @["Word"])
     let rule = newRule("List", "Item Sep List<Item> / Item", "", @["Item"])
     let grammar = newGrammar()
@@ -47,7 +47,7 @@ suite "patternresolution":
     let spec = subSpec( grammar, @[capture])
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
-    check buf.readAll().strip == "({Word} ) Sep List_Word / ({Word} )"
+    check buf.readAll().strip == "{Word} Sep List_Word / {Word}"
 
   test "resolve non-literal part with one param and one parameterized rule capture":
     let ruleRef = newRuleRef("List", @["Word"])
@@ -60,7 +60,7 @@ suite "patternresolution":
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let value = buf.readAll().strip
-    check value == "(Word ) Sep {List_Word} / (Word )"
+    check value == "Word Sep {List_Word} / Word"
 
 
   test "resolve non-literal part with 2 params":
@@ -73,7 +73,7 @@ suite "patternresolution":
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let value = buf.readAll().strip
-    check value == "(Word ) (Space ) List_Word_Space / (Word )"
+    check value == "Word Space List_Word_Space / Word"
 
   test "resolve rule with one literal arg":
     let ruleRef = newRuleRef("List", @["[a-z]+"])
@@ -88,7 +88,7 @@ suite "patternresolution":
     check resolved =~ peg"'([a-z]+) Sep List_p' [0-9]+ ' / ([a-z]+)'"
 
 suite "recursive":
-  enableLogging()
+  # enableLogging()
   setup:
     var buf = newStringStream()
     var subs: seq[RuleRef]
@@ -105,7 +105,7 @@ suite "recursive":
     resolveRuleRes(spec, resolver, subs, buf, 0)
     setPosition(buf, 0)
     let resolved = buf.readAll().strip
-    check resolved =~ peg"'(Spaced_Word ) Sep List_p' [0-9]+ ' / (Spaced_Word )'"
+    check resolved == "Spaced_Word Sep List_Spaced_Word / Spaced_Word"
     check subs.filterIt(it.name == "Spaced" and sequal(it.args, @["Word"])).len() > 0
 
   let grammarSpec = """

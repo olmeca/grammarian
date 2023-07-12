@@ -148,7 +148,7 @@ suite "Matchers":
 suite "extract":
   test "extraction two items":
     let grammar = newGrammar(adres_spec)
-    let wp_extractor = grammar.extractorPeg("Adres", @["Straat", "Woonplaats"])
+    let wp_extractor = extractorPeg(grammar, "Adres", @[], @["Straat", "Woonplaats"])
     if "Zjoekowlaan 93, Delft" =~ wp_extractor:
       check matches[1] == "Delft"
       check matches[0] == "Zjoekowlaan"

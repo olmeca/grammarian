@@ -167,6 +167,19 @@ abopen <- spc '<'
 abclose <- spc '>'
 """
 
+let compositeExprPeg* = peg"""
+composite <- ^ paropen parcontent parclose !.
+parcontent <- subrange (sub subrange)*
+subrange <- (!subrangeend .)*
+subrangeend <- (paropen / parclose / '"' / "'")
+sub <- (stringlit / parenthesized)
+parenthesized <- paropen parcontent parclose
+stringlit <- ("\"" ("\\" . / [^"])* "\"" /
+              "'"  ("\\" . / [^'])* "'")
+paropen <- '('
+parclose <- ')'
+"""
+
 let compositeSeqItemPeg* = peg"""
 primary <- {prefixOpr} ig paropen {topparcontent} parclose ig {postfixOpr}
 prefixOpr <- ig '&' / ig '!' / ig '@' / ig '{@}' / ig '@@' / ''
@@ -257,7 +270,8 @@ Sp <- ' '*
 """
 
 let name_pattern* = peg"^ [a-z,A-Z] [a-z,A-Z0-9_]* !."
-let group_pattern* = peg "^ '(' (!')' .)+ ')' !."
+
+let capturedPattern* = peg"^ '{' @ '}' !."
 
 let rule_params_peg* = peg"""
 Params <- {Pattern} ',' Sp Params / {Pattern}
