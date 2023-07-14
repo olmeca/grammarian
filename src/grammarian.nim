@@ -141,8 +141,8 @@ proc lutmap(value: string, lut: seq[string]): string =
   if foundIndex >= 0: lut[foundIndex] else: value
 
 proc fuse(name: string, args: seq[string] = @[]): string =
-  let fusedParams = args.map(x => "_$#" % x).join("")
-  result = "$#$#" % [name, fusedParams]
+  let fusedArgs = args.map(x => "_$#" % x).join("")
+  result = "$#$#" % [name, fusedArgs]
 
 
 proc nameWithArgs(name: string, args: seq[string]): string =
@@ -253,8 +253,13 @@ proc hasResolvedRule(grammar: Grammar, ruleRef: RuleRef): bool =
   grammar.rules.filter(r => r.name == ruleName).len() > 0
 
 
-proc shouldCapture(spec: SubGrammarSpec, ruleRef: RuleRef): bool =
-  spec.captures.filter(r => nameWithArgs(r) == nameWithArgs(ruleRef)).len > 0
+proc shouldCapture(spec: SubGrammarSpec, ruleRes: RuleRes, ruleRef: RuleRef): bool =
+  # if ruleref is a resolved recursive ref
+  if refersTo(ruleRef, ruleRes):
+    false
+  else:
+    let refName = nameWithArgs(ruleRef)
+    spec.captures.any(r => nameWithArgs(r) == refName)
 
 
 func applier*(rule: Rule, args: seq[string], parent: RuleRes = nil): RuleRes =
@@ -384,7 +389,7 @@ proc resolveSequenceItem( spec: SubGrammarSpec, ruleRes: RuleRes, patSpec: strin
       indentLog(depth, "resolveSequenceItem: parsed ruleref: " & $(ruleRef))
       let resolvedRuleRef = resolveRuleRef(spec, ruleRes, ruleRef, ruleRefAcc, depth+1)
       indentLog(depth, "resolveSequenceItem: resolved ruleref: '$#'" % $(resolvedRuleRef))
-      let captured = shouldCapture(spec, resolvedRuleRef)
+      let captured = shouldCapture(spec, ruleRes, resolvedRuleRef)
       let itemString = serialize(resolvedRuleRef, captured, successorPrefix, cardinalityIndicator)
       indentLog(depth, "resolveSequenceItem: writing item: '$#'" % itemString)
       patAccBuf.write(itemString)
@@ -633,8 +638,8 @@ proc pegString*(grammar: Grammar, ruleName: string = cDefaultRoot, args: seq[str
   debug ("pegString ->\n" & result)
 
 
-proc matcher*(grammar: Grammar, patternName: string = cDefaultRoot, args: seq[string] = @[]): Peg =
-  peg(pegString(grammar, patternName, args))
+proc matcher*(grammar: Grammar, patternName: string = cDefaultRoot, args: seq[string] = @[], variant: string = ""): Peg =
+  peg(pegString(grammar, patternName, args, @[], variant))
 
 
 proc extractorPeg*(grammar: Grammar, parts: seq[string], patternName: string = cDefaultRoot, variant: string = ""): Peg =
